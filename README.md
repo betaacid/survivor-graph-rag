@@ -7,9 +7,9 @@ Traditional RAG works great for single-document, extractive questions. Graph RAG
 ## Quick Start
 
 ```bash
-# 1. Clone and install
+# 1. Clone and install (requires uv: https://docs.astral.sh/uv/)
 git clone <repo-url> && cd survivorgraph
-pip install -r requirements.txt
+uv sync
 
 # 2. Configure
 cp .env.example .env
@@ -19,7 +19,7 @@ cp .env.example .env
 docker compose up -d
 
 # 4. Run the full pipeline (download, parse, embed, ingest, demo)
-python run_all.py
+uv run python run_all.py
 ```
 
 ## What It Does
@@ -32,6 +32,6 @@ python run_all.py
 
 ## Requirements
 
-- Python 3.11+
+- [uv](https://docs.astral.sh/uv/) (Python 3.11+)
 - Docker & Docker Compose
 - OpenAI API key
