@@ -1,4 +1,5 @@
 import json
+import logging
 import sys
 from pathlib import Path
 
@@ -17,19 +18,22 @@ from lib.pg_client import get_chunk_count, insert_chunks, setup_schema
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 TEXT_DIR = DATA_DIR / "raw_text"
 
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+log = logging.getLogger(__name__)
+
 
 def main():
     manifest_path = DATA_DIR / "seasons_manifest.json"
     if not manifest_path.exists():
-        print("Run 01_download_seasons.py first.")
+        log.error("Run 01_download_seasons.py first.")
         sys.exit(1)
 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
-    print("Setting up pgvector schema...")
+    log.info("Setting up pgvector schema...")
     setup_schema()
 
-    print(f"Chunking and embedding {len(manifest)} seasons...")
+    log.info("Chunking and embedding %d seasons...", len(manifest))
     total_chunks = 0
 
     for season in tqdm(manifest, desc="Embedding seasons"):
@@ -46,7 +50,7 @@ def main():
         total_chunks += len(chunks)
 
     count = get_chunk_count()
-    print(f"\nDone. {total_chunks} chunks embedded and stored. Total in DB: {count}")
+    log.info("Done. %d chunks embedded and stored. Total in DB: %d", total_chunks, count)
 
 
 if __name__ == "__main__":

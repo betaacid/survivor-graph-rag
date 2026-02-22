@@ -1,3 +1,4 @@
+import logging
 import os
 
 from openai import OpenAI
@@ -5,6 +6,7 @@ from openai import OpenAI
 _client = None
 MODEL = "text-embedding-3-small"
 DIMENSIONS = 1536
+log = logging.getLogger(__name__)
 
 
 def get_client():
@@ -16,6 +18,7 @@ def get_client():
 
 def embed_texts(texts, batch_size=100):
     client = get_client()
+    log.debug("Embedding %d texts in batches of %d", len(texts), batch_size)
     all_embeddings = []
     for i in range(0, len(texts), batch_size):
         batch = texts[i : i + batch_size]

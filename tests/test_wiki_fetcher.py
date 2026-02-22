@@ -5,11 +5,17 @@ import lib.wiki_fetcher as wf
 
 
 class DummyResponse:
-    def __init__(self, payload):
+    def __init__(self, payload, status_code=200):
         self.payload = payload
+        self.status_code = status_code
+        self.text = ""
 
     def json(self):
         return self.payload
+
+    def raise_for_status(self):
+        if 400 <= self.status_code < 600:
+            raise Exception(f"HTTP {self.status_code}")
 
 
 def test_html_to_plain_text_removes_tables_and_navbox():

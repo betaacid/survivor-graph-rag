@@ -1,3 +1,4 @@
+import logging
 import re
 import time
 from pathlib import Path
@@ -7,6 +8,9 @@ from bs4 import BeautifulSoup
 
 API = "https://en.wikipedia.org/w/api.php"
 RATE_LIMIT_SECONDS = 0.5
+HEADERS = {"User-Agent": "SurvivorGraphRAG/1.0 (https://github.com/survivorgraph; contact@example.com)"}
+
+log = logging.getLogger(__name__)
 
 
 def get_season_titles():
@@ -26,11 +30,17 @@ def get_season_titles():
         if cmcontinue:
             params["cmcontinue"] = cmcontinue
 
-        resp = requests.get(API, params=params, timeout=30).json()
-        members = resp["query"]["categorymembers"]
+        resp = requests.get(API, params=params, headers=HEADERS, timeout=30)
+        resp.raise_for_status()
+        try:
+            data = resp.json()
+        except ValueError as e:
+            log.error("Wikipedia API returned non-JSON. Status=%s, body[:500]=%r", resp.status_code, resp.text[:500])
+            raise
+        members = data["query"]["categorymembers"]
         titles.extend(m["title"] for m in members)
 
-        cmcontinue = resp.get("continue", {}).get("cmcontinue")
+        cmcontinue = data.get("continue", {}).get("cmcontinue")
         if not cmcontinue:
             break
 
@@ -50,8 +60,14 @@ def fetch_parsed_html(title):
         "format": "json",
         "redirects": "1",
     }
-    resp = requests.get(API, params=params, timeout=30).json()
-    page = resp["parse"]
+    resp = requests.get(API, params=params, headers=HEADERS, timeout=30)
+    resp.raise_for_status()
+    try:
+        data = resp.json()
+    except ValueError as e:
+        log.error("Wikipedia API returned non-JSON. Status=%s, body[:500]=%r", resp.status_code, resp.text[:500])
+        raise
+    page = data["parse"]
     return page["pageid"], page["text"]["*"]
 
 
@@ -64,7 +80,7 @@ def html_to_plain_text(html):
     return text
 
 
-def download_all_seasons(output_dir):
+def download_all_seasons(output_dir, limit=None, fresh=False):
     output_dir = Path(output_dir)
     html_dir = output_dir / "raw_html"
     text_dir = output_dir / "raw_text"
@@ -72,16 +88,20 @@ def download_all_seasons(output_dir):
     text_dir.mkdir(parents=True, exist_ok=True)
 
     titles = get_season_titles()
-    print(f"Found {len(titles)} season pages")
+    if limit is not None:
+        titles = titles[:limit]
+        log.info("Smoke test mode: limiting to %d season(s)", limit)
+    log.info("Found %d season page(s) to process", len(titles))
 
+    skip_cache = fresh or limit is not None
     results = []
     for title in titles:
         safe_name = title.replace(" ", "_").replace(":", "_").replace("/", "_")
         html_path = html_dir / f"{safe_name}.html"
         text_path = text_dir / f"{safe_name}.txt"
 
-        if html_path.exists() and text_path.exists():
-            print(f"  [cached] {title}")
+        if not skip_cache and html_path.exists() and text_path.exists():
+            log.info("  [cached] %s", title)
             results.append({
                 "title": title,
                 "html_path": str(html_path),
@@ -103,7 +123,7 @@ def download_all_seasons(output_dir):
             "html_path": str(html_path),
             "text_path": str(text_path),
         })
-        print(f"  [downloaded] {title}")
+        log.info("  [downloaded] %s", title)
         time.sleep(RATE_LIMIT_SECONDS)
 
     return results

@@ -1,21 +1,29 @@
+import logging
 import os
 
 import psycopg2
 from psycopg2.extras import execute_values
 
 _conn = None
+log = logging.getLogger(__name__)
 
 
 def get_conn():
     global _conn
     if _conn is None or _conn.closed:
-        _conn = psycopg2.connect(os.getenv("DATABASE_URL"))
+        url = os.getenv("DATABASE_URL")
+        log.debug("Connecting to Postgres: %s", url.split("@")[-1] if url else "DATABASE_URL not set")
+        _conn = psycopg2.connect(url)
         _conn.autocommit = True
     return _conn
 
 
 def setup_schema():
-    conn = get_conn()
+    try:
+        conn = get_conn()
+    except Exception as e:
+        log.error("Postgres connection failed: %s", e)
+        raise
     with conn.cursor() as cur:
         cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
         cur.execute("""
@@ -72,3 +80,9 @@ def get_chunk_count():
     with conn.cursor() as cur:
         cur.execute("SELECT COUNT(*) FROM chunks")
         return cur.fetchone()[0]
+
+
+def truncate_chunks():
+    conn = get_conn()
+    with conn.cursor() as cur:
+        cur.execute("TRUNCATE TABLE chunks RESTART IDENTITY")

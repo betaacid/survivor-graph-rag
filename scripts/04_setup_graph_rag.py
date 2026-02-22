@@ -1,4 +1,6 @@
+import argparse
 import json
+import logging
 import re
 import sys
 from pathlib import Path
@@ -11,7 +13,7 @@ load_dotenv()
 
 from tqdm import tqdm
 
-from lib.llm import chat_json
+from lib.llm import groq_strict
 from lib.neo4j_client import (
     add_vote,
     get_node_counts,
@@ -30,62 +32,14 @@ from lib.neo4j_client import (
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 TABLES_DIR = DATA_DIR / "tables"
 
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+log = logging.getLogger(__name__)
+
 SEASON_NUMBER_PATTERN = re.compile(r"[Ss]eason\s*(\d+)|(\d+)(?:st|nd|rd|th)\s+season|^Survivor\s+(\d+)")
 
 NORMALIZE_SYSTEM = """You are a data normalization assistant for Survivor TV show data.
 Given a classified table and its column mapping, produce clean canonical rows.
-
-For "contestants" tables, return JSON:
-{
-  "players": [
-    {
-      "name": "Full Name",
-      "age": 25,
-      "hometown": "City, State",
-      "original_tribe": "TribeName",
-      "placement": "1st voted out",
-      "day_out": 3,
-      "exit_type": "voted_out|medevac|quit|winner|runner_up",
-      "jury_member": true/false
-    }
-  ]
-}
-
-For "episodes" tables (challenge winners and eliminations), return JSON:
-{
-  "episodes": [
-    {
-      "episode_number": 1,
-      "title": "Episode Title",
-      "air_date": "January 28, 2001",
-      "reward_winners": ["Name1"],
-      "immunity_winners": ["Name1"],
-      "eliminated": "PlayerName",
-      "eliminated_tribe": "TribeName"
-    }
-  ]
-}
-
-For "voting_history" tables, return JSON:
-{
-  "votes": [
-    {"voter": "Name", "episode_number": 1, "target": "OtherName"}
-  ]
-}
-
-For "jury_vote" tables, return JSON:
-{
-  "jury_votes": [
-    {"juror": "Name", "voted_for": "FinalistName"}
-  ]
-}
-
-For "episodes_detail" tables, return JSON:
-{
-  "episode_details": [
-    {"episode_number": 1, "title": "...", "air_date": "...", "viewers_millions": 45.37}
-  ]
-}
+Return ONLY valid JSON matching the requested schema.
 
 Rules:
 - Use full first and last names when available
@@ -94,8 +48,129 @@ Rules:
 - For exit_type, the winner should be "winner" and runner-up(s) should be "runner_up"
 - jury_member is true if the player served on the final jury
 - Skip recap/reunion episodes that have no tribal council
-- Return ONLY valid JSON, no explanation
 """
+
+CONTESTANTS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "players": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": ["string", "null"]},
+                    "age": {"type": ["integer", "null"]},
+                    "hometown": {"type": ["string", "null"]},
+                    "original_tribe": {"type": ["string", "null"]},
+                    "placement": {"type": ["string", "null"]},
+                    "day_out": {"type": ["integer", "null"]},
+                    "exit_type": {"type": ["string", "null"]},
+                    "jury_member": {"type": ["boolean", "null"]},
+                },
+                "required": ["name", "age", "hometown", "original_tribe", "placement", "day_out", "exit_type", "jury_member"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["players"],
+    "additionalProperties": False,
+}
+
+EPISODES_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "episodes": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "episode_number": {"type": ["integer", "null"]},
+                    "title": {"type": ["string", "null"]},
+                    "air_date": {"type": ["string", "null"]},
+                    "reward_winners": {"type": ["array", "null"], "items": {"type": "string"}},
+                    "immunity_winners": {"type": ["array", "null"], "items": {"type": "string"}},
+                    "eliminated": {"type": ["string", "null"]},
+                    "eliminated_tribe": {"type": ["string", "null"]},
+                },
+                "required": ["episode_number", "title", "air_date", "reward_winners", "immunity_winners", "eliminated", "eliminated_tribe"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["episodes"],
+    "additionalProperties": False,
+}
+
+VOTING_HISTORY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "votes": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "voter": {"type": ["string", "null"]},
+                    "episode_number": {"type": ["integer", "null"]},
+                    "target": {"type": ["string", "null"]},
+                },
+                "required": ["voter", "episode_number", "target"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["votes"],
+    "additionalProperties": False,
+}
+
+JURY_VOTE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "jury_votes": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "juror": {"type": ["string", "null"]},
+                    "voted_for": {"type": ["string", "null"]},
+                },
+                "required": ["juror", "voted_for"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["jury_votes"],
+    "additionalProperties": False,
+}
+
+EPISODES_DETAIL_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "episode_details": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "episode_number": {"type": ["integer", "null"]},
+                    "title": {"type": ["string", "null"]},
+                    "air_date": {"type": ["string", "null"]},
+                    "viewers_millions": {"type": ["number", "null"]},
+                },
+                "required": ["episode_number", "title", "air_date", "viewers_millions"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["episode_details"],
+    "additionalProperties": False,
+}
+
+TABLE_TYPE_SCHEMAS = {
+    "contestants": ("contestants_normalize", CONTESTANTS_SCHEMA),
+    "episodes": ("episodes_normalize", EPISODES_SCHEMA),
+    "voting_history": ("voting_history_normalize", VOTING_HISTORY_SCHEMA),
+    "jury_vote": ("jury_vote_normalize", JURY_VOTE_SCHEMA),
+    "episodes_detail": ("episodes_detail_normalize", EPISODES_DETAIL_SCHEMA),
+}
 
 
 def extract_season_number(title):
@@ -132,36 +207,42 @@ def extract_season_number(title):
     return None
 
 
-def normalize_table(table, season_title):
+def normalize_table(table, season_title, smoke=False):
     table_type = table.get("table_type", "other")
     if table_type == "other":
         return None, None
 
+    schema_entry = TABLE_TYPE_SCHEMAS.get(table_type)
+    if schema_entry is None:
+        log.warning("No strict schema for table type %s, skipping.", table_type)
+        return table_type, None
+
+    schema_name, schema = schema_entry
     col_mapping = table.get("column_mapping", {})
     mapping_info = json.dumps(col_mapping) if col_mapping else "no mapping"
 
-    rows_sample = table["rows"][:20] if len(table["rows"]) > 20 else table["rows"]
+    rows = table["rows"]
+    if smoke and len(rows) > 20:
+        rows = rows[:20]
+        log.info("Smoke mode: truncated %s table from %d to 20 rows", table_type, len(table["rows"]))
+
     user_prompt = f"""Season: {season_title}
 Table type: {table_type}
 Column mapping: {mapping_info}
 Columns: {table['columns']}
-Rows (may be truncated):
-{json.dumps(rows_sample, ensure_ascii=False)}
+Rows:
+{json.dumps(rows, ensure_ascii=False)}
 """
-    if len(table["rows"]) > 20:
-        all_rows = table["rows"]
-        remaining = json.dumps(all_rows[20:], ensure_ascii=False)
-        user_prompt += f"\nRemaining rows:\n{remaining}"
 
     try:
-        result = chat_json(NORMALIZE_SYSTEM, user_prompt)
+        result = groq_strict(NORMALIZE_SYSTEM, user_prompt, schema, schema_name=schema_name)
         return table_type, result
     except Exception as e:
-        print(f"    LLM normalization failed for {table_type}: {e}")
+        log.warning("Groq normalization failed for %s / %s: %s", season_title, table_type, e)
         return table_type, None
 
 
-def ingest_season(season_title, season_number, tables_data):
+def ingest_season(season_title, season_number, tables_data, smoke=False):
     upsert_season({"title": season_title, "number": season_number})
 
     contestants_data = None
@@ -171,7 +252,7 @@ def ingest_season(season_title, season_number, tables_data):
     episode_details = None
 
     for table in tables_data:
-        table_type, normalized = normalize_table(table, season_title)
+        table_type, normalized = normalize_table(table, season_title, smoke=smoke)
         if normalized is None:
             continue
 
@@ -188,15 +269,18 @@ def ingest_season(season_title, season_number, tables_data):
 
     tribes_seen = set()
     if contestants_data:
+        log.info("  Ingesting %d contestants for %s", len(contestants_data), season_title)
         for p in contestants_data:
             name = p.get("name")
             if not name:
                 continue
             upsert_player(name)
 
-            exit_type = p.get("exit_type", "voted_out")
-            jury_member = p.get("jury_member", False)
-            if isinstance(jury_member, str):
+            exit_type = p.get("exit_type") or "voted_out"
+            jury_member = p.get("jury_member")
+            if jury_member is None:
+                jury_member = False
+            elif isinstance(jury_member, str):
                 jury_member = jury_member.lower() in ("true", "yes", "1")
 
             day_out = p.get("day_out")
@@ -233,6 +317,7 @@ def ingest_season(season_title, season_number, tables_data):
                 link_player_tribe(name, season_number, tribe)
 
     if episodes_data:
+        log.info("  Ingesting %d episodes for %s", len(episodes_data), season_title)
         for ep in episodes_data:
             ep_num = ep.get("episode_number")
             if ep_num is None:
@@ -263,6 +348,7 @@ def ingest_season(season_title, season_number, tables_data):
                 link_episode_eliminated(season_number, ep_num, eliminated)
 
     if episode_details:
+        log.info("  Ingesting %d episode details for %s", len(episode_details), season_title)
         for ed in episode_details:
             ep_num = ed.get("episode_number")
             if ep_num is None:
@@ -288,6 +374,7 @@ def ingest_season(season_title, season_number, tables_data):
             })
 
     if votes_data:
+        log.info("  Ingesting %d votes for %s", len(votes_data), season_title)
         for vote in votes_data:
             voter = vote.get("voter")
             target = vote.get("target")
@@ -301,37 +388,42 @@ def ingest_season(season_title, season_number, tables_data):
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--smoke", action="store_true", help="Smoke-test mode: truncate large tables to 20 rows")
+    args = parser.parse_args()
+
     tables_dir = TABLES_DIR
     if not tables_dir.exists():
-        print("Run 02_extract_tables.py first.")
+        log.error("Run 02_extract_tables.py first.")
         sys.exit(1)
 
     manifest_path = DATA_DIR / "seasons_manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
-    print("Setting up Neo4j constraints and indexes...")
+    log.info("Setting up Neo4j constraints and indexes...")
     setup_constraints()
 
-    print(f"Ingesting {len(manifest)} seasons into Neo4j...")
+    mode_label = "smoke" if args.smoke else "full"
+    log.info("Ingesting %d seasons into Neo4j (%s mode)...", len(manifest), mode_label)
 
     for season in tqdm(manifest, desc="Ingesting"):
         title = season["title"]
         season_number = extract_season_number(title)
         if season_number is None:
-            print(f"  Could not determine season number for: {title}, skipping.")
+            log.warning("Could not determine season number for: %s, skipping.", title)
             continue
 
         safe_name = Path(season["html_path"]).stem
         table_path = tables_dir / f"{safe_name}.json"
         if not table_path.exists():
-            print(f"  No table file for {title}, skipping.")
+            log.warning("No table file for %s, skipping.", title)
             continue
 
         table_doc = json.loads(table_path.read_text(encoding="utf-8"))
-        ingest_season(title, season_number, table_doc["tables"])
+        ingest_season(title, season_number, table_doc["tables"], smoke=args.smoke)
 
     counts = get_node_counts()
-    print(f"\nDone. Node counts: {counts}")
+    log.info("Done. Node counts: %s", counts)
 
 
 if __name__ == "__main__":

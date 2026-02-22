@@ -1,3 +1,7 @@
+import argparse
+import datetime
+import json
+import logging
 import sys
 import textwrap
 import time
@@ -10,11 +14,21 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from lib.embeddings import embed_query
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+log = logging.getLogger(__name__)
 from lib.llm import chat
 from lib.neo4j_client import run_query
 from lib.pg_client import search_similar
 
 DEMO_QUESTIONS = [
+    {
+        "category": "Smoke Test (work with 1 season)",
+        "questions": [
+            "Who won Survivor 41?",
+            "Who were the tribes in Survivor 41?",
+        ],
+    },
     {
         "category": "Traditional RAG Strengths",
         "questions": [
@@ -56,9 +70,10 @@ CYPHER_SYSTEM = """You are a Neo4j Cypher query expert for a Survivor TV show gr
 
 The schema is:
 Nodes:
-- Season {title, number, location, days, num_castaways, num_episodes, winner, runner_up, air_start, air_end}
+- Season {title, number}
 - Player {name}
-- PlayerSeason {player_name, season_number, age, hometown, placement, day_out, exit_type, jury_member, starting_tribe}
+- PlayerSeason {player_name, season_number, age, hometown, placement, day_out, exit_type, jury_member}
+  (exit_type: 'winner' = season winner, 'runner_up' = runner-up, 'voted_out', 'medevac', 'quit')
 - Episode {season_number, episode_number, title, air_date, viewers_millions}
 - Tribe {name, season_number, phase}
 
@@ -74,7 +89,8 @@ Relationships:
 
 Write a Cypher query to answer the user's question. Return ONLY the Cypher query, no explanation.
 Keep results to a reasonable size (use LIMIT if the result set could be large).
-Use OPTIONAL MATCH when a path might not exist for all nodes."""
+Use OPTIONAL MATCH when a path might not exist for all nodes.
+To find a season winner: MATCH (ps:PlayerSeason {season_number: N}) WHERE ps.exit_type = 'winner' RETURN ps.player_name."""
 
 
 def query_traditional_rag(question):
@@ -129,17 +145,35 @@ def print_wrapped(text, indent=2, width=76):
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--limit", type=int, default=None, help="Run only first N questions (smoke test)")
+    args = parser.parse_args()
+
+    runs_dir = Path(__file__).resolve().parent.parent / "data" / "demo_runs"
+    runs_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_path = runs_dir / f"{timestamp}.jsonl"
+    log.info("Results will be persisted to %s", run_path)
+
     print_divider()
     print("  SURVIVOR: Traditional RAG vs Graph RAG — Side-by-Side Demo")
     print_divider()
 
+    questions_run = 0
     for category in DEMO_QUESTIONS:
         print(f"\n{'':>2}--- {category['category']} ---\n")
 
         for question in category["questions"]:
+            if args.limit is not None and questions_run >= args.limit:
+                log.info("Stopping after %d questions (--limit)", args.limit)
+                break
+            questions_run += 1
             print_divider("-")
             print(f"  Q: {question}")
             print_divider("-")
+
+            trad_record = {"question": question, "mode": "traditional_rag", "answer": None, "chunks": [], "time_s": None}
+            graph_record = {"question": question, "mode": "graph_rag", "answer": None, "cypher": None, "graph_rows": 0, "time_s": None}
 
             print("\n  [Traditional RAG]")
             t0 = time.time()
@@ -148,8 +182,17 @@ def main():
                 trad_time = time.time() - t0
                 print(f"  Time: {trad_time:.1f}s | Chunks retrieved: {len(trad_context)}")
                 print_wrapped(trad_answer)
+                log.info("Traditional RAG answer for '%s': %s", question, trad_answer[:200])
+                trad_record["answer"] = trad_answer
+                trad_record["time_s"] = round(trad_time, 2)
+                trad_record["chunks"] = [
+                    {"season_title": c["season_title"], "similarity": round(c["similarity"], 4)}
+                    for c in trad_context
+                ]
             except Exception as e:
+                log.exception("Traditional RAG failed")
                 print(f"  Error: {e}")
+                trad_record["answer"] = f"ERROR: {e}"
 
             print(f"\n  [Graph RAG]")
             t0 = time.time()
@@ -160,14 +203,30 @@ def main():
                 print(f"  Time: {graph_time:.1f}s | Graph rows: {result_count}")
                 print(f"  Cypher: {cypher[:120]}{'...' if len(cypher) > 120 else ''}")
                 print_wrapped(graph_answer)
+                log.info("Graph RAG cypher for '%s': %s", question, cypher)
+                log.info("Graph RAG answer for '%s': %s", question, graph_answer[:200])
+                graph_record["answer"] = graph_answer
+                graph_record["cypher"] = cypher
+                graph_record["graph_rows"] = result_count
+                graph_record["time_s"] = round(graph_time, 2)
             except Exception as e:
+                log.exception("Graph RAG failed")
                 print(f"  Error: {e}")
+                graph_record["answer"] = f"ERROR: {e}"
+
+            with open(run_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(trad_record, ensure_ascii=False) + "\n")
+                f.write(json.dumps(graph_record, ensure_ascii=False) + "\n")
 
             print()
+
+        if args.limit is not None and questions_run >= args.limit:
+            break
 
     print_divider()
     print("  Demo complete.")
     print_divider()
+    log.info("All results saved to %s", run_path)
 
 
 if __name__ == "__main__":

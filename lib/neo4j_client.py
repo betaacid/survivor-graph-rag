@@ -1,15 +1,19 @@
+import logging
 import os
 
 from neo4j import GraphDatabase
 
 _driver = None
+log = logging.getLogger(__name__)
 
 
 def get_driver():
     global _driver
     if _driver is None:
+        uri = os.getenv("NEO4J_URI", "bolt://localhost:7687")
+        log.debug("Connecting to Neo4j: %s", uri)
         _driver = GraphDatabase.driver(
-            os.getenv("NEO4J_URI", "bolt://localhost:7687"),
+            uri,
             auth=(os.getenv("NEO4J_USER", "neo4j"), os.getenv("NEO4J_PASSWORD", "survivor")),
         )
     return _driver
@@ -29,6 +33,7 @@ def run_write(cypher, params=None):
 
 
 def setup_constraints():
+    log.info("Setting up Neo4j constraints and indexes...")
     constraints = [
         "CREATE CONSTRAINT IF NOT EXISTS FOR (s:Season) REQUIRE s.title IS UNIQUE",
         "CREATE CONSTRAINT IF NOT EXISTS FOR (p:Player) REQUIRE p.name IS UNIQUE",
@@ -37,8 +42,8 @@ def setup_constraints():
     for c in constraints:
         try:
             run_write(c)
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("Constraint (may already exist): %s", e)
 
     indexes = [
         "CREATE INDEX IF NOT EXISTS FOR (e:Episode) ON (e.season_number, e.episode_number)",
@@ -47,8 +52,8 @@ def setup_constraints():
     for idx in indexes:
         try:
             run_write(idx)
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("Index (may already exist): %s", e)
 
 
 def clear_graph():
@@ -141,7 +146,7 @@ def add_vote(voter_name, target_name, season_number, episode_number):
 
 def get_node_counts():
     result = run_query("""
-        CALL {
+        CALL () {
             MATCH (s:Season) RETURN 'Season' AS label, count(s) AS cnt
             UNION ALL
             MATCH (p:Player) RETURN 'Player' AS label, count(p) AS cnt
