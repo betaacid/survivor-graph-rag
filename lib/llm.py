@@ -26,27 +26,28 @@ def get_groq_client():
     return _groq_client
 
 
-def chat(system_prompt, user_prompt, model="gpt-4.1", temperature=0, max_tokens=4096):
+def chat(system_prompt, user_prompt, model="gpt-5.2", temperature=0, max_tokens=4096):
     client = get_openai_client()
     log.debug("LLM chat request, model=%s", model)
-    resp = client.chat.completions.create(
-        model=model,
-        temperature=temperature,
-        max_tokens=max_tokens,
-        messages=[
+    kwargs = {
+        "model": model,
+        "temperature": temperature,
+        "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
-    )
+    }
+    kwargs["max_completion_tokens"] = max_tokens
+    resp = client.chat.completions.create(**kwargs)
     return resp.choices[0].message.content
 
 
-def chat_json(system_prompt, user_prompt, model="gpt-4.1", temperature=0):
+def chat_json(system_prompt, user_prompt, model="gpt-5.2", temperature=0):
     client = get_openai_client()
     resp = client.chat.completions.create(
         model=model,
         temperature=temperature,
-        max_tokens=4096,
+        max_completion_tokens=4096,
         response_format={"type": "json_object"},
         messages=[
             {"role": "system", "content": system_prompt},
