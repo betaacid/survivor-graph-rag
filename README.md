@@ -35,3 +35,12 @@ uv run python run_all.py
 - [uv](https://docs.astral.sh/uv/) (Python 3.11+)
 - Docker & Docker Compose
 - OpenAI API key
+
+## Run Tests
+
+```bash
+uv sync --group dev
+uv run --group dev pytest
+```
+
+These tests validate parsing and normalization helpers without running the full download/embedding/graph pipeline.

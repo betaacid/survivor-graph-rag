@@ -16,6 +16,11 @@ dependencies = [
     "tqdm>=4.66",
 ]
 
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["lib"]
 
