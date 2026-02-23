@@ -30,7 +30,9 @@ uv run python run_all.py --reset
 1. **Downloads** all 50 Survivor season pages from Wikipedia via the MediaWiki API
 2. **Extracts** structured tables (contestants, episodes, voting history) using pandas + GPT for column normalization
 3. **Sets up Traditional RAG** — chunks text, embeds with OpenAI, stores in pgvector
-4. **Sets up Graph RAG** — ingests structured data into Neo4j with a rich schema (Season, Player, Episode, Tribe, TribalCouncil, Vote edges)
+4. **Sets up Graph RAG** — ingests structured data into Neo4j with a rich schema:
+   - **Nodes:** Season, Player, PlayerSeason, Episode, Tribe, TribalCouncil
+   - **Relationships:** HAS_EPISODE, HAS_TRIBE, HAS_TRIBAL, PLAYED_IN, IN_SEASON, MEMBER_OF, ATTENDED_TRIBAL, ELIMINATED, IMMUNITY_WON_BY, REWARD_WON_BY, TRIBAL_COUNCIL_FOR, CAST_VOTE, JURY_VOTE_FOR
 5. **Runs demo queries** side-by-side to compare both approaches
 
 ## Requirements

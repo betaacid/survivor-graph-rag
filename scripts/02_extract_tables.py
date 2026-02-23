@@ -14,6 +14,7 @@ from tqdm import tqdm
 
 from lib.llm import groq_strict
 from lib.table_parser import extract_tables_from_html
+from lib.vote_parser import parse_jury_vote, parse_voting_history
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 TABLES_DIR = DATA_DIR / "tables"
@@ -85,6 +86,19 @@ def process_season(html_path, season_title):
     html = Path(html_path).read_text(encoding="utf-8")
     raw_tables = extract_tables_from_html(html)
 
+    has_custom_voting = False
+    has_custom_jury = False
+
+    voting = parse_voting_history(html)
+    if voting and voting.get("votes"):
+        has_custom_voting = True
+        log.info("Custom parser extracted %d votes for %s", len(voting["votes"]), season_title)
+
+    jury = parse_jury_vote(html)
+    if jury and jury.get("jury_votes"):
+        has_custom_jury = True
+        log.info("Custom parser extracted %d jury votes for %s", len(jury["jury_votes"]), season_title)
+
     classified = []
     for i, table in enumerate(raw_tables):
         try:
@@ -102,6 +116,32 @@ def process_season(html_path, season_title):
             "columns": table["columns"],
             "num_rows": table["num_rows"],
             "rows": table["rows"],
+        })
+
+    if has_custom_voting:
+        classified.append({
+            "index": len(classified),
+            "caption": "Voting history (custom parser)",
+            "table_type": "voting_history",
+            "column_mapping": {},
+            "notes": "Extracted by custom BeautifulSoup parser",
+            "columns": ["voter", "episode_number", "target"],
+            "num_rows": len(voting["votes"]),
+            "rows": [],
+            "votes": voting["votes"],
+        })
+
+    if has_custom_jury:
+        classified.append({
+            "index": len(classified),
+            "caption": "Jury vote (custom parser)",
+            "table_type": "jury_vote",
+            "column_mapping": {},
+            "notes": "Extracted by custom BeautifulSoup parser",
+            "columns": ["juror", "voted_for"],
+            "num_rows": len(jury["jury_votes"]),
+            "rows": [],
+            "jury_votes": jury["jury_votes"],
         })
 
     return classified

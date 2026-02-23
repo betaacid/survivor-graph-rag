@@ -15,17 +15,21 @@ from tqdm import tqdm
 
 from lib.llm import groq_strict
 from lib.neo4j_client import (
+    add_jury_vote,
     add_vote,
     get_node_counts,
     link_episode_eliminated,
     link_episode_immunity,
     link_episode_reward,
+    link_episode_tribe,
     link_player_tribe,
+    link_tribal_attendee,
     setup_constraints,
     upsert_episode,
     upsert_player,
     upsert_player_season,
     upsert_season,
+    upsert_tribal_council,
     upsert_tribe,
 )
 
@@ -66,8 +70,9 @@ CONTESTANTS_SCHEMA = {
                     "day_out": {"type": ["integer", "null"]},
                     "exit_type": {"type": ["string", "null"]},
                     "jury_member": {"type": ["boolean", "null"]},
+                    "merged_tribe": {"type": ["string", "null"]},
                 },
-                "required": ["name", "age", "hometown", "original_tribe", "placement", "day_out", "exit_type", "jury_member"],
+                "required": ["name", "age", "hometown", "original_tribe", "placement", "day_out", "exit_type", "jury_member", "merged_tribe"],
                 "additionalProperties": False,
             },
         },
@@ -252,6 +257,18 @@ def ingest_season(season_title, season_number, tables_data, smoke=False):
     episode_details = None
 
     for table in tables_data:
+        table_type = table.get("table_type", "other")
+
+        if table_type == "voting_history" and "votes" in table:
+            log.info("  Using pre-parsed voting data (%d votes) for %s", len(table["votes"]), season_title)
+            votes_data = table["votes"]
+            continue
+
+        if table_type == "jury_vote" and "jury_votes" in table:
+            log.info("  Using pre-parsed jury data (%d votes) for %s", len(table["jury_votes"]), season_title)
+            jury_data = table["jury_votes"]
+            continue
+
         table_type, normalized = normalize_table(table, season_title, smoke=smoke)
         if normalized is None:
             continue
@@ -260,9 +277,9 @@ def ingest_season(season_title, season_number, tables_data, smoke=False):
             contestants_data = normalized.get("players", [])
         elif table_type == "episodes":
             episodes_data = normalized.get("episodes", [])
-        elif table_type == "voting_history":
+        elif table_type == "voting_history" and votes_data is None:
             votes_data = normalized.get("votes", [])
-        elif table_type == "jury_vote":
+        elif table_type == "jury_vote" and jury_data is None:
             jury_data = normalized.get("jury_votes", [])
         elif table_type == "episodes_detail":
             episode_details = normalized.get("episode_details", [])
@@ -316,6 +333,14 @@ def ingest_season(season_title, season_number, tables_data, smoke=False):
                     tribes_seen.add(tribe)
                 link_player_tribe(name, season_number, tribe)
 
+            merged = p.get("merged_tribe")
+            if merged and merged.lower() not in ("", "none", "null"):
+                merged_key = f"merged:{merged}"
+                if merged_key not in tribes_seen:
+                    upsert_tribe(merged, season_number, "merged")
+                    tribes_seen.add(merged_key)
+                link_player_tribe(name, season_number, merged)
+
     if episodes_data:
         log.info("  Ingesting %d episodes for %s", len(episodes_data), season_title)
         for ep in episodes_data:
@@ -347,6 +372,10 @@ def ingest_season(season_title, season_number, tables_data, smoke=False):
             if eliminated and eliminated.lower() not in ("none", "null", ""):
                 link_episode_eliminated(season_number, ep_num, eliminated)
 
+            elim_tribe = ep.get("eliminated_tribe")
+            if elim_tribe and elim_tribe.lower() not in ("none", "null", ""):
+                link_episode_tribe(season_number, ep_num, elim_tribe)
+
     if episode_details:
         log.info("  Ingesting %d episode details for %s", len(episode_details), season_title)
         for ed in episode_details:
@@ -375,6 +404,8 @@ def ingest_season(season_title, season_number, tables_data, smoke=False):
 
     if votes_data:
         log.info("  Ingesting %d votes for %s", len(votes_data), season_title)
+        from collections import defaultdict
+        tribal_attendees = defaultdict(set)
         for vote in votes_data:
             voter = vote.get("voter")
             target = vote.get("target")
@@ -385,6 +416,35 @@ def ingest_season(season_title, season_number, tables_data, smoke=False):
                 except (ValueError, TypeError):
                     continue
                 add_vote(voter, target, season_number, ep_num)
+                tribal_attendees[ep_num].add(voter)
+
+        eliminated_by_ep = {}
+        if episodes_data:
+            for ep in episodes_data:
+                elim = ep.get("eliminated")
+                ep_n = ep.get("episode_number")
+                if elim and ep_n:
+                    try:
+                        eliminated_by_ep[int(ep_n)] = elim
+                    except (ValueError, TypeError):
+                        pass
+
+        for ep_num, attendees in tribal_attendees.items():
+            upsert_tribal_council(season_number, ep_num)
+            for player in attendees:
+                link_tribal_attendee(season_number, ep_num, player)
+            elim = eliminated_by_ep.get(ep_num)
+            if elim and elim not in attendees:
+                link_tribal_attendee(season_number, ep_num, elim)
+        log.info("  Created %d tribal councils for %s", len(tribal_attendees), season_title)
+
+    if jury_data:
+        log.info("  Ingesting %d jury votes for %s", len(jury_data), season_title)
+        for jv in jury_data:
+            juror = jv.get("juror")
+            voted_for = jv.get("voted_for")
+            if juror and voted_for:
+                add_jury_vote(juror, voted_for, season_number)
 
 
 def main():

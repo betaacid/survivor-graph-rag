@@ -48,6 +48,7 @@ def setup_constraints():
     indexes = [
         "CREATE INDEX IF NOT EXISTS FOR (e:Episode) ON (e.season_number, e.episode_number)",
         "CREATE INDEX IF NOT EXISTS FOR (ps:PlayerSeason) ON (ps.player_name, ps.season_number)",
+        "CREATE INDEX IF NOT EXISTS FOR (tc:TribalCouncil) ON (tc.season_number, tc.episode_number)",
     ]
     for idx in indexes:
         try:
@@ -138,10 +139,52 @@ def link_episode_eliminated(season_number, episode_number, player_name):
 
 def add_vote(voter_name, target_name, season_number, episode_number):
     run_write("""
-        MATCH (voter:PlayerSeason {player_name: $voter, season_number: $sn})
-        MATCH (target:PlayerSeason {player_name: $target, season_number: $sn})
+        MATCH (voter:PlayerSeason {season_number: $sn})
+        WHERE voter.player_name = $voter OR voter.player_name STARTS WITH $voter
+        WITH voter LIMIT 1
+        MATCH (target:PlayerSeason {season_number: $sn})
+        WHERE target.player_name = $target OR target.player_name STARTS WITH $target
+        WITH voter, target LIMIT 1
         MERGE (voter)-[v:CAST_VOTE {episode_number: $ep}]->(target)
     """, {"voter": voter_name, "target": target_name, "sn": season_number, "ep": episode_number})
+
+
+def upsert_tribal_council(season_number, episode_number):
+    run_write("""
+        MERGE (tc:TribalCouncil {season_number: $sn, episode_number: $ep})
+        WITH tc
+        MATCH (e:Episode {season_number: $sn, episode_number: $ep})
+        MERGE (e)-[:HAS_TRIBAL]->(tc)
+    """, {"sn": season_number, "ep": episode_number})
+
+
+def link_tribal_attendee(season_number, episode_number, player_name):
+    run_write("""
+        MATCH (ps:PlayerSeason {season_number: $sn})
+        WHERE ps.player_name = $name OR ps.player_name STARTS WITH $name
+        WITH ps LIMIT 1
+        MATCH (tc:TribalCouncil {season_number: $sn, episode_number: $ep})
+        MERGE (ps)-[:ATTENDED_TRIBAL]->(tc)
+    """, {"name": player_name, "sn": season_number, "ep": episode_number})
+
+
+def add_jury_vote(juror_name, voted_for_name, season_number):
+    run_write("""
+        MATCH (juror:PlayerSeason {season_number: $sn})
+        WHERE juror.player_name = $juror OR juror.player_name STARTS WITH $juror
+        MATCH (winner:PlayerSeason {season_number: $sn})
+        WHERE winner.player_name = $voted_for OR winner.player_name STARTS WITH $voted_for
+        WITH juror, winner LIMIT 1
+        MERGE (juror)-[:JURY_VOTE_FOR]->(winner)
+    """, {"juror": juror_name, "voted_for": voted_for_name, "sn": season_number})
+
+
+def link_episode_tribe(season_number, episode_number, tribe_name):
+    run_write("""
+        MATCH (e:Episode {season_number: $sn, episode_number: $ep})
+        MATCH (t:Tribe {name: $tribe, season_number: $sn})
+        MERGE (e)-[:TRIBAL_COUNCIL_FOR]->(t)
+    """, {"sn": season_number, "ep": episode_number, "tribe": tribe_name})
 
 
 def get_graph_schema():
@@ -332,6 +375,8 @@ def get_node_counts():
             MATCH (e:Episode) RETURN 'Episode' AS label, count(e) AS cnt
             UNION ALL
             MATCH (t:Tribe) RETURN 'Tribe' AS label, count(t) AS cnt
+            UNION ALL
+            MATCH (tc:TribalCouncil) RETURN 'TribalCouncil' AS label, count(tc) AS cnt
         }
         RETURN label, cnt
     """)

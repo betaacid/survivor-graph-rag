@@ -94,6 +94,18 @@ CYPHER_EXAMPLES = [
         "Who won reward challenges in Survivor 41?",
         "MATCH (e:Episode {season_number: 41})-[:REWARD_WON_BY]->(ps:PlayerSeason) RETURN e.episode_number, ps.player_name ORDER BY e.episode_number",
     ),
+    (
+        "Who attended the most tribal councils in Survivor 41?",
+        "MATCH (ps:PlayerSeason {season_number: 41})-[:ATTENDED_TRIBAL]->(tc:TribalCouncil) RETURN ps.player_name, count(tc) AS tribals_attended ORDER BY tribals_attended DESC LIMIT 10",
+    ),
+    (
+        "For each winner, how many jury votes did they receive?",
+        "MATCH (juror:PlayerSeason)-[:JURY_VOTE_FOR]->(winner:PlayerSeason) WHERE winner.exit_type = 'winner' RETURN winner.player_name, winner.season_number, count(juror) AS jury_votes ORDER BY winner.season_number",
+    ),
+    (
+        "Which tribe went to tribal council in episode 3 of Survivor 41?",
+        "MATCH (e:Episode {season_number: 41, episode_number: 3})-[:TRIBAL_COUNCIL_FOR]->(t:Tribe) RETURN t.name",
+    ),
 ]
 
 TERMINOLOGY_MAP = """Terminology mappings:
@@ -103,13 +115,17 @@ TERMINOLOGY_MAP = """Terminology mappings:
 - "immunity win" / "won immunity" -> (Episode)-[:IMMUNITY_WON_BY]->(PlayerSeason) relationship (NOT a property on any node)
 - "reward win" / "won reward" / "reward challenge" -> (Episode)-[:REWARD_WON_BY]->(PlayerSeason) relationship (NOT a property on any node)
 - "tribe" / "team" -> (:Tribe) node accessed via [:MEMBER_OF] from PlayerSeason
+- "original tribe" / "starting tribe" -> Tribe node where phase = 'premerge', accessed via [:MEMBER_OF]
+- "merged tribe" / "post-merge tribe" -> Tribe node where phase = 'merged', accessed via [:MEMBER_OF]
 - "season N" / "Survivor N" -> Season.number = N or PlayerSeason.season_number = N
 - "jury member" -> PlayerSeason.jury_member property (boolean)
+- "jury vote" / "voted for the winner" / "final vote" -> [:JURY_VOTE_FOR] relationship from juror PlayerSeason to finalist PlayerSeason
 - "medevac" / "medical evacuation" -> exit_type = 'medevac'
 - "quit" -> exit_type = 'quit'
 - "returning player" / "played multiple times" -> Player with multiple [:PLAYED_IN] relationships
-- "voted for" -> [:CAST_VOTE] relationship between PlayerSeason nodes (has episode_number property)
-- "original tribe" / "starting tribe" -> Tribe node where phase = 'premerge', accessed via [:MEMBER_OF]"""
+- "voted for" (during tribal council) -> [:CAST_VOTE] relationship between PlayerSeason nodes (has episode_number property)
+- "tribal council attendance" / "attended tribal" / "went to tribal" -> [:ATTENDED_TRIBAL] from PlayerSeason to TribalCouncil node
+- "which tribe went to tribal" -> (Episode)-[:TRIBAL_COUNCIL_FOR]->(Tribe)"""
 
 FORMAT_INSTRUCTIONS = """Do not include any explanations or apologies in your responses.
 Do not respond to any questions that might ask anything else than for you to construct a Cypher statement.
@@ -124,26 +140,35 @@ _STATIC_SCHEMA = """Node labels and properties:
   PlayerSeason {player_name: STRING, season_number: INTEGER, age: INTEGER, hometown: STRING, placement: INTEGER, day_out: INTEGER, exit_type: STRING, jury_member: BOOLEAN}
   Episode {season_number: INTEGER, episode_number: INTEGER, title: STRING, air_date: STRING, viewers_millions: FLOAT}
   Tribe {name: STRING, season_number: INTEGER, phase: STRING}
+  TribalCouncil {season_number: INTEGER, episode_number: INTEGER}
 Relationship types and properties:
   HAS_EPISODE
   HAS_TRIBE
+  HAS_TRIBAL
   PLAYED_IN
   IN_SEASON
   MEMBER_OF
+  ATTENDED_TRIBAL
   ELIMINATED
   IMMUNITY_WON_BY
   REWARD_WON_BY
+  TRIBAL_COUNCIL_FOR
   CAST_VOTE {episode_number: INTEGER}
+  JURY_VOTE_FOR
 The relationships:
   (:Season)-[:HAS_EPISODE]->(:Episode)
   (:Season)-[:HAS_TRIBE]->(:Tribe)
   (:Player)-[:PLAYED_IN]->(:PlayerSeason)
   (:PlayerSeason)-[:IN_SEASON]->(:Season)
   (:PlayerSeason)-[:MEMBER_OF]->(:Tribe)
+  (:PlayerSeason)-[:ATTENDED_TRIBAL]->(:TribalCouncil)
+  (:PlayerSeason)-[:CAST_VOTE]->(:PlayerSeason)
+  (:PlayerSeason)-[:JURY_VOTE_FOR]->(:PlayerSeason)
+  (:Episode)-[:HAS_TRIBAL]->(:TribalCouncil)
   (:Episode)-[:ELIMINATED]->(:PlayerSeason)
   (:Episode)-[:IMMUNITY_WON_BY]->(:PlayerSeason)
   (:Episode)-[:REWARD_WON_BY]->(:PlayerSeason)
-  (:PlayerSeason)-[:CAST_VOTE]->(:PlayerSeason)"""
+  (:Episode)-[:TRIBAL_COUNCIL_FOR]->(:Tribe)"""
 
 
 def build_cypher_system_prompt(schema=None):
