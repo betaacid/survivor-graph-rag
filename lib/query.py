@@ -9,37 +9,31 @@ log = logging.getLogger(__name__)
 
 DEMO_QUESTIONS = [
     {
-        "category": "Smoke Test (work with 1 season)",
+        "category": "Traditional RAG is Best",
         "questions": [
-            "Who won Survivor 41?",
-            "Who were the tribes in Survivor 41?",
+            "Why was Michael Skupin medically evacuated in Survivor: The Australian Outback?",
+            "What was the overall fan reception of Survivor 48?",
+            "Describe the strategic gameplay of the merge in Survivor: Cagayan.",
         ],
     },
     {
-        "category": "Traditional RAG Strengths",
+        "category": "Graph RAG is Best",
         "questions": [
-            "Who won Survivor: The Australian Outback?",
-            "Why was Michael Skupin medically evacuated?",
-            "Describe the dynamics between Colby and Jerri in The Australian Outback.",
-        ],
-    },
-    {
-        "category": "Traditional RAG Starts to Struggle",
-        "questions": [
-            "How many individual immunity challenges did Colby win in The Australian Outback?",
+            "Which player has played in the most seasons of Survivor?",
+            "How many total tribal councils have there been across all 49 seasons?",
+            "List all Survivor winners and how many jury votes each received.",
             "Who were all the jury members in Survivor: The Australian Outback?",
+            "Find every instance where a player voted for someone who later voted them out in the same season.",
+            "Show all players who competed in 3 or more seasons.",
+            "Which seasons had a medical evacuation?",
         ],
     },
     {
-        "category": "Graph RAG Wins",
+        "category": "Graph RAG Needs Custom Work",
         "questions": [
-            "Across all seasons, who has the highest number of individual immunity wins?",
-            "Which players were voted out in one season but returned in a later season?",
-            "Find every instance where a player voted for someone who later voted them out in the same season.",
-            "What is the most common episode number for a player's elimination across all seasons?",
-            "Which seasons had a medical evacuation?",
-            "For each winner, how many jury votes did they receive? Show the top 10 by margin of victory.",
-            "Show all players who competed in 3 or more seasons and their placement in each.",
+            "Across all seasons, who has the highest number of individual immunity challenge wins?",
+            "What is the most common episode number for eliminations across all seasons?",
+            "Which player has won the most reward challenges across all seasons?",
         ],
     },
 ]
@@ -63,8 +57,12 @@ CYPHER_EXAMPLES = [
         "MATCH (t:Tribe {season_number: 41}) RETURN t.name, t.phase ORDER BY t.phase",
     ),
     (
-        "How many individual immunity challenges did Colby win in The Australian Outback?",
-        "MATCH (e:Episode)-[:IMMUNITY_WON_BY]->(ps:PlayerSeason {player_name: 'Colby Donaldson', season_number: 2}) RETURN count(e) AS immunity_wins",
+        "Which player has played in the most seasons?",
+        "MATCH (p:Player)-[:PLAYED_IN]->(ps:PlayerSeason) WITH p, count(DISTINCT ps.season_number) AS seasons_played ORDER BY seasons_played DESC RETURN p.name, seasons_played LIMIT 10",
+    ),
+    (
+        "How many total tribal councils across all seasons?",
+        "MATCH (tc:TribalCouncil) RETURN count(tc) AS total_tribal_councils",
     ),
     (
         "Which players competed in 3 or more seasons?",
@@ -72,7 +70,7 @@ CYPHER_EXAMPLES = [
     ),
     (
         "Which seasons had a medical evacuation?",
-        "MATCH (ps:PlayerSeason) WHERE ps.exit_type = 'medevac' RETURN DISTINCT ps.season_number ORDER BY ps.season_number",
+        "MATCH (ps:PlayerSeason) WHERE toLower(ps.exit_type) CONTAINS 'med' RETURN DISTINCT ps.season_number ORDER BY ps.season_number",
     ),
     (
         "Who were all the jury members in Survivor: The Australian Outback?",
@@ -80,27 +78,15 @@ CYPHER_EXAMPLES = [
     ),
     (
         "Find every instance where a player voted for someone who later voted them out in the same season.",
-        "MATCH (a:PlayerSeason)-[v1:CAST_VOTE]->(b:PlayerSeason), (b)-[v2:CAST_VOTE]->(a), (e:Episode)-[:ELIMINATED]->(a) WHERE a.season_number = b.season_number AND v1.episode_number < v2.episode_number AND v2.episode_number = e.episode_number RETURN a.player_name AS voted_first, b.player_name AS voted_back, a.season_number AS season, v1.episode_number AS first_vote_ep, v2.episode_number AS elimination_ep",
+        "MATCH (a:PlayerSeason)-[v1:CAST_VOTE]->(b:PlayerSeason), (b)-[v2:CAST_VOTE]->(a) WHERE a.season_number = b.season_number AND v1.episode_number < v2.episode_number RETURN a.player_name AS voted_first, b.player_name AS voted_back, a.season_number AS season, v1.episode_number AS first_vote_ep, v2.episode_number AS revenge_vote_ep ORDER BY season, revenge_vote_ep LIMIT 50",
     ),
     (
-        "Across all seasons, who has the highest number of individual immunity wins?",
-        "MATCH (e:Episode)-[:IMMUNITY_WON_BY]->(ps:PlayerSeason) RETURN ps.player_name, count(e) AS wins ORDER BY wins DESC LIMIT 10",
-    ),
-    (
-        "Who was eliminated in each episode of Survivor 41?",
-        "MATCH (e:Episode {season_number: 41})-[:ELIMINATED]->(ps:PlayerSeason) RETURN e.episode_number, ps.player_name ORDER BY e.episode_number",
-    ),
-    (
-        "Who won reward challenges in Survivor 41?",
-        "MATCH (e:Episode {season_number: 41})-[:REWARD_WON_BY]->(ps:PlayerSeason) RETURN e.episode_number, ps.player_name ORDER BY e.episode_number",
+        "List all Survivor winners and how many jury votes each received.",
+        "MATCH (juror:PlayerSeason)-[:JURY_VOTE_FOR]->(winner:PlayerSeason) WHERE winner.exit_type = 'winner' RETURN winner.player_name, winner.season_number, count(juror) AS jury_votes ORDER BY winner.season_number",
     ),
     (
         "Who attended the most tribal councils in Survivor 41?",
         "MATCH (ps:PlayerSeason {season_number: 41})-[:ATTENDED_TRIBAL]->(tc:TribalCouncil) RETURN ps.player_name, count(tc) AS tribals_attended ORDER BY tribals_attended DESC LIMIT 10",
-    ),
-    (
-        "For each winner, how many jury votes did they receive?",
-        "MATCH (juror:PlayerSeason)-[:JURY_VOTE_FOR]->(winner:PlayerSeason) WHERE winner.exit_type = 'winner' RETURN winner.player_name, winner.season_number, count(juror) AS jury_votes ORDER BY winner.season_number",
     ),
     (
         "Which tribe went to tribal council in episode 3 of Survivor 41?",
