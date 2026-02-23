@@ -2,7 +2,7 @@
 
 A demo that compares Traditional RAG (pgvector semantic search) with Graph RAG (Neo4j) using Wikipedia data from all 49 aired seasons of Survivor.
 
-Traditional RAG works great for single-document, extractive questions. Graph RAG shines on multi-hop, cross-season, aggregation, and relational queries.
+Traditional RAG works great for single-document, extractive questions. Graph RAG shines on multi-hop, cross-season, aggregation, and relational queries. **Agentic RAG** adds a rewriter, a classifier that routes between prebuilt Cypher queries and a text2cypher fallback, and an answer critic for more reliable graph answers.
 
 ## Quick Start
 
@@ -34,6 +34,21 @@ uv run python run_all.py --reset
    - **Nodes:** Season, Player, PlayerSeason, Episode, Tribe, TribalCouncil
    - **Relationships:** HAS_EPISODE, HAS_TRIBE, HAS_TRIBAL, PLAYED_IN, IN_SEASON, MEMBER_OF, ATTENDED_TRIBAL, ELIMINATED, IMMUNITY_WON_BY, REWARD_WON_BY, TRIBAL_COUNCIL_FOR, CAST_VOTE, JURY_VOTE_FOR
 5. **Runs demo queries** side-by-side to compare both approaches
+
+## App
+
+After the pipeline has run, start the Streamlit app:
+
+```bash
+uv run streamlit run app.py
+```
+
+Choose a mode:
+
+- **Both (side-by-side)** — Run Traditional RAG and Graph RAG on the same question and compare answers, timing, and retrieved context.
+- **Traditional RAG** — Semantic search over chunked Wikipedia text plus LLM answer generation.
+- **Graph RAG** — LLM-generated Cypher queries against Neo4j, with retries on empty or failing queries, then answer generation from results.
+- **Agentic RAG** — A multi-step pipeline: (1) rewriter makes the question atomic and specific, (2) classifier picks either a **prebuilt query** (season winner, player seasons, tribes, top immunity/reward winners, jury members, elimination-by-episode, players in multiple seasons) or the **text2cypher** fallback, (3) answer critic checks completeness and can trigger one retry with follow-up questions, (4) final answer from retrieved data. The UI shows an expandable **Agent Trace** with each step for demos.
 
 ## Requirements
 

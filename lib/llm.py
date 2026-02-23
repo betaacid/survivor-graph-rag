@@ -57,6 +57,19 @@ def chat_json(system_prompt, user_prompt, model="gpt-5.2", temperature=0):
     return json.loads(resp.choices[0].message.content)
 
 
+def chat_with_tools(messages, tools, model="gpt-5.2", temperature=0):
+    client = get_openai_client()
+    log.debug("LLM tool-call request, model=%s, tools=%d", model, len(tools))
+    resp = client.chat.completions.create(
+        model=model,
+        temperature=temperature,
+        max_completion_tokens=4096,
+        messages=messages,
+        tools=tools,
+    )
+    return resp.choices[0].message
+
+
 def groq_strict(system_prompt, user_prompt, schema, schema_name="response"):
     client = get_groq_client()
     model = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")

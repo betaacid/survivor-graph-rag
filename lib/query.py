@@ -210,9 +210,8 @@ def query_traditional_rag(question):
     return answer, results
 
 
-def query_graph_rag(question):
+def run_text2cypher(question):
     system_prompt = build_cypher_system_prompt()
-
     cypher = clean_cypher(chat(system_prompt, question))
 
     last_error = None
@@ -245,10 +244,18 @@ def query_graph_rag(question):
                 cypher = clean_cypher(chat(system_prompt, repair_prompt))
 
     if graph_results is None and last_error is not None:
-        return f"Cypher query failed after {1 + CYPHER_MAX_RETRIES} attempts: {last_error}\n\nLast query:\n{cypher}", cypher, []
+        raise RuntimeError(
+            f"Cypher query failed after {1 + CYPHER_MAX_RETRIES} attempts: {last_error}\n\nLast query:\n{cypher}"
+        )
 
-    if graph_results is None:
-        graph_results = []
+    return cypher, graph_results or []
+
+
+def query_graph_rag(question):
+    try:
+        cypher, graph_results = run_text2cypher(question)
+    except RuntimeError as e:
+        return str(e), "", []
 
     results_str = ""
     if graph_results:
