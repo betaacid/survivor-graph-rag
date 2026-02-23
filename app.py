@@ -91,7 +91,7 @@ def set_question(q):
 
 with st.sidebar:
     st.title("Survivor RAG")
-    st.caption("Traditional RAG vs Graph RAG")
+    st.caption("Traditional, Graph, and Agentic RAG")
 
     st.divider()
     st.subheader("Example Questions")
@@ -121,16 +121,16 @@ question = st.text_input(
 
 mode = st.radio(
     "Mode",
-    ["Both (side-by-side)", "Traditional RAG", "Graph RAG", "Agentic RAG"],
+    ["All", "Traditional RAG", "Graph RAG", "Agentic RAG"],
     horizontal=True,
 )
 
 run = st.button("Run", type="primary", disabled=not question.strip())
 
 if run and question.strip():
-    run_trad = mode in ("Both (side-by-side)", "Traditional RAG")
-    run_graph = mode in ("Both (side-by-side)", "Graph RAG")
-    run_agentic = mode == "Agentic RAG"
+    run_trad = mode in ("All", "Traditional RAG")
+    run_graph = mode in ("All", "Graph RAG")
+    run_agentic = mode in ("All", "Agentic RAG")
     st.session_state.results = {
         "question": question,
         "mode": mode,
@@ -179,13 +179,14 @@ if run and question.strip():
 
 if st.session_state.results and st.session_state.results.get("question") == question:
     r = st.session_state.results
-    run_trad = r["mode"] in ("Both (side-by-side)", "Traditional RAG")
-    run_graph = r["mode"] in ("Both (side-by-side)", "Graph RAG")
+    run_trad = r["mode"] in ("All", "Traditional RAG")
+    run_graph = r["mode"] in ("All", "Graph RAG")
+    run_agentic = r["mode"] in ("All", "Agentic RAG")
 
-    if r["mode"] == "Both (side-by-side)":
-        col_trad, col_graph = st.columns(2)
+    if r["mode"] == "All":
+        col_trad, col_graph, col_agentic = st.columns(3)
     else:
-        col_trad = col_graph = st.container()
+        col_trad = col_graph = col_agentic = st.container()
 
     if run_trad:
         with col_trad:
@@ -246,48 +247,49 @@ if st.session_state.results and st.session_state.results.get("question") == ques
             with target if not fullscreen else st.container():
                 st.info("No graph structure to visualize for this query.")
 
-    if r["mode"] == "Agentic RAG":
-        st.subheader("Agentic RAG")
-        if r.get("agentic_error"):
-            st.error(f"Agentic RAG failed: {r['agentic_error']}")
-        elif r.get("agentic_answer"):
-            st.markdown(r["agentic_answer"])
-            st.caption(f"{r['agentic_elapsed']:.1f}s")
+    if run_agentic:
+        with col_agentic:
+            st.subheader("Agentic RAG")
+            if r.get("agentic_error"):
+                st.error(f"Agentic RAG failed: {r['agentic_error']}")
+            elif r.get("agentic_answer"):
+                st.markdown(r["agentic_answer"])
+                st.caption(f"{r['agentic_elapsed']:.1f}s")
 
-            steps = r.get("agentic_steps", [])
-            with st.expander("Agent Trace"):
-                for step in steps:
-                    stage = step.get("stage", "")
-                    if stage == "rewriter":
-                        st.markdown("**Rewriter**")
-                        st.text(f"Original:  {step.get('original', '')}")
-                        st.text(f"Rewritten: {step.get('rewritten', '')}")
-                        st.divider()
-                    elif stage == "router":
-                        if step.get("error"):
-                            st.error(f"Router error: {step['error']}")
-                        else:
-                            st.markdown(f"**Router** selected tool: `{step.get('tool', '')}`")
-                            if step.get("args"):
-                                st.json(step["args"])
-                            if step.get("cypher"):
-                                st.code(step["cypher"], language="cypher")
-                            st.caption(f"{step.get('rows_returned', 0)} rows returned")
-                        st.divider()
-                    elif stage == "critic":
-                        follow_ups = step.get("follow_ups", [])
-                        if follow_ups:
-                            st.markdown(f"**Critic** requested follow-ups: {len(follow_ups)}")
-                            for fu in follow_ups:
-                                st.text(f"  - {fu}")
-                        else:
-                            st.markdown("**Critic** -- answer deemed complete")
-                        st.divider()
-                    elif stage == "critic_retry":
-                        if step.get("error"):
-                            st.error(f"Retry error: {step['error']}")
-                        else:
-                            st.markdown(f"**Retry** tool: `{step.get('tool', '')}`")
-                            if step.get("cypher"):
-                                st.code(step["cypher"], language="cypher")
-                            st.caption(f"{step.get('rows_returned', 0)} rows returned")
+                steps = r.get("agentic_steps", [])
+                with st.expander("Agent Trace"):
+                    for step in steps:
+                        stage = step.get("stage", "")
+                        if stage == "rewriter":
+                            st.markdown("**Rewriter**")
+                            st.text(f"Original:  {step.get('original', '')}")
+                            st.text(f"Rewritten: {step.get('rewritten', '')}")
+                            st.divider()
+                        elif stage == "router":
+                            if step.get("error"):
+                                st.error(f"Router error: {step['error']}")
+                            else:
+                                st.markdown(f"**Router** selected tool: `{step.get('tool', '')}`")
+                                if step.get("args"):
+                                    st.json(step["args"])
+                                if step.get("cypher"):
+                                    st.code(step["cypher"], language="cypher")
+                                st.caption(f"{step.get('rows_returned', 0)} rows returned")
+                            st.divider()
+                        elif stage == "critic":
+                            follow_ups = step.get("follow_ups", [])
+                            if follow_ups:
+                                st.markdown(f"**Critic** requested follow-ups: {len(follow_ups)}")
+                                for fu in follow_ups:
+                                    st.text(f"  - {fu}")
+                            else:
+                                st.markdown("**Critic** -- answer deemed complete")
+                            st.divider()
+                        elif stage == "critic_retry":
+                            if step.get("error"):
+                                st.error(f"Retry error: {step['error']}")
+                            else:
+                                st.markdown(f"**Retry** tool: `{step.get('tool', '')}`")
+                                if step.get("cypher"):
+                                    st.code(step["cypher"], language="cypher")
+                                st.caption(f"{step.get('rows_returned', 0)} rows returned")

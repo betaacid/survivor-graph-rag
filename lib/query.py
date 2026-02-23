@@ -33,7 +33,14 @@ DEMO_QUESTIONS = [
         "questions": [
             "Across all seasons, who has the highest number of individual immunity challenge wins?",
             "What is the most common episode number for eliminations across all seasons?",
-            "Which player has won the most reward challenges across all seasons?",
+        ],
+    },
+    {
+        "category": "Agentic RAG is Best",
+        "questions": [
+            "Who has the most individual immunity wins, and how many seasons did they play?",
+            "Who won Survivor 45, and who were the jury members that season?",
+            "Which players competed in 4 or more seasons, and which of them won the most reward challenges?",
         ],
     },
 ]
