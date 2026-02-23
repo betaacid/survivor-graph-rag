@@ -1,6 +1,6 @@
 # Survivor: Graph RAG vs Traditional RAG
 
-A demo that compares Traditional RAG (pgvector semantic search) with Graph RAG (Neo4j) using Wikipedia data from all 50 seasons of Survivor.
+A demo that compares Traditional RAG (pgvector semantic search) with Graph RAG (Neo4j) using Wikipedia data from all 49 aired seasons of Survivor.
 
 Traditional RAG works great for single-document, extractive questions. Graph RAG shines on multi-hop, cross-season, aggregation, and relational queries.
 

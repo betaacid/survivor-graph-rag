@@ -197,7 +197,7 @@ def extract_season_number(title):
         "Ghost Island": 36, "David vs. Goliath": 37, "Edge of Extinction": 38,
         "Island of the Idols": 39, "Winners at War": 40, "41": 41, "42": 42,
         "43": 43, "44": 44, "45": 45, "46": 46, "47": 47, "48": 48,
-        "49": 49, "50": 50,
+        "49": 49,
     }
     for subtitle, num in known.items():
         if subtitle.lower() in title.lower():
@@ -206,7 +206,7 @@ def extract_season_number(title):
     nums = re.findall(r"(\d+)", title)
     for n in nums:
         val = int(n)
-        if 1 <= val <= 50:
+        if 1 <= val <= 49:
             return val
 
     return None

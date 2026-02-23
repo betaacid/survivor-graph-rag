@@ -8,6 +8,7 @@ from bs4 import BeautifulSoup
 
 API = "https://en.wikipedia.org/w/api.php"
 RATE_LIMIT_SECONDS = 0.5
+MAX_SEASON = 49
 HEADERS = {"User-Agent": "SurvivorGraphRAG/1.0 (https://github.com/survivorgraph; contact@example.com)"}
 
 log = logging.getLogger(__name__)
@@ -49,6 +50,16 @@ def get_season_titles():
         if t.startswith("Survivor") and "season" not in t.lower()
         and "list" not in t.lower() and "category" not in t.lower()
     ]
+
+    def _season_num(title):
+        nums = re.findall(r"\d+", title)
+        for n in nums:
+            val = int(n)
+            if 1 <= val <= 99:
+                return val
+        return 0
+
+    season_titles = [t for t in season_titles if _season_num(t) <= MAX_SEASON]
     return sorted(season_titles)
 
 

@@ -68,6 +68,22 @@ CLASSIFY_SCHEMA = {
 }
 
 
+def _looks_like_voting_table(table):
+    caption = (table.get("caption") or "").lower()
+    if "voting history" in caption:
+        return True
+    cols = " ".join(str(c).lower() for c in table.get("columns", []))
+    return "voter" in cols and ("episode" in cols or "vote" in cols)
+
+
+def _looks_like_jury_table(table):
+    caption = (table.get("caption") or "").lower()
+    if "jury vote" in caption:
+        return True
+    cols = " ".join(str(c).lower() for c in table.get("columns", []))
+    return "juror" in cols and ("finalist" in cols or "vote" in cols)
+
+
 def classify_table(table_meta, season_title):
     user_prompt = f"""Season: {season_title}
 Caption: {table_meta.get('caption', 'None')}
@@ -101,11 +117,18 @@ def process_season(html_path, season_title):
 
     classified = []
     for i, table in enumerate(raw_tables):
-        try:
-            classification = classify_table(table, season_title)
-        except Exception as e:
-            log.warning("Table %d classification failed for %s: %s", i, season_title, e)
-            classification = {"table_type": "other", "column_mapping": {}, "notes": str(e)}
+        if has_custom_voting and _looks_like_voting_table(table):
+            log.info("  Skipping Groq call for table %d (voting history already custom-parsed)", i)
+            classification = {"table_type": "other", "column_mapping": {}, "notes": "Skipped: custom parser already extracted voting data"}
+        elif has_custom_jury and _looks_like_jury_table(table):
+            log.info("  Skipping Groq call for table %d (jury vote already custom-parsed)", i)
+            classification = {"table_type": "other", "column_mapping": {}, "notes": "Skipped: custom parser already extracted jury data"}
+        else:
+            try:
+                classification = classify_table(table, season_title)
+            except Exception as e:
+                log.warning("Table %d classification failed for %s: %s", i, season_title, e)
+                classification = {"table_type": "other", "column_mapping": {}, "notes": str(e)}
 
         classified.append({
             "index": i,
