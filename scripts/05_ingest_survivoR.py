@@ -1,10 +1,12 @@
 import argparse
 import json
 import logging
-import os
 import sys
+import urllib.request
 from collections import defaultdict
 from pathlib import Path
+
+from tqdm import tqdm
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -12,7 +14,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from tqdm import tqdm
+SURVIVOR_DATA_BASE = "https://raw.githubusercontent.com/doehm/survivoR/master/dev/json"
 
 from lib.neo4j_client import (
     add_jury_vote,
@@ -40,9 +42,10 @@ log = logging.getLogger(__name__)
 MAX_SEASON = 49
 
 
-def load_json(data_dir, filename):
-    path = data_dir / filename
-    data = json.loads(path.read_text(encoding="utf-8"))
+def load_json(filename):
+    url = f"{SURVIVOR_DATA_BASE}/{filename}"
+    with urllib.request.urlopen(url, timeout=60) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
     return [r for r in data if r.get("version") == "US" and (r.get("season") or 0) <= MAX_SEASON]
 
 
@@ -58,16 +61,20 @@ def resolve(lookup, season, short_name):
     return lookup.get((season, short_name), short_name)
 
 
-def ingest_seasons(data_dir):
-    raw = load_json(data_dir, "season_summary.json")
+def ingest_seasons(seasons):
+    raw = load_json("season_summary.json")
+    if seasons is not None:
+        raw = [r for r in raw if r.get("season") in seasons]
     log.info("Ingesting %d seasons...", len(raw))
     for r in tqdm(raw, desc="Seasons"):
         upsert_season({"title": r["season_name"], "number": r["season"]})
     return len(raw)
 
 
-def ingest_players(data_dir):
-    castaways = load_json(data_dir, "castaways.json")
+def ingest_players(seasons):
+    castaways = load_json("castaways.json")
+    if seasons is not None:
+        castaways = [r for r in castaways if r.get("season") in seasons]
     log.info("Ingesting %d player-seasons...", len(castaways))
     for r in tqdm(castaways, desc="Players"):
         full_name = r.get("full_name", r["castaway"])
@@ -98,8 +105,10 @@ def ingest_players(data_dir):
     return castaways
 
 
-def ingest_episodes(data_dir):
-    episodes = load_json(data_dir, "episodes.json")
+def ingest_episodes(seasons):
+    episodes = load_json("episodes.json")
+    if seasons is not None:
+        episodes = [r for r in episodes if r.get("season") in seasons]
     log.info("Ingesting %d episodes...", len(episodes))
     for r in tqdm(episodes, desc="Episodes"):
         season = r["season"]
@@ -122,8 +131,10 @@ def ingest_episodes(data_dir):
     return len(episodes)
 
 
-def ingest_tribes(data_dir, name_lookup):
-    tribe_mapping = load_json(data_dir, "tribe_mapping.json")
+def ingest_tribes(seasons, name_lookup):
+    tribe_mapping = load_json("tribe_mapping.json")
+    if seasons is not None:
+        tribe_mapping = [r for r in tribe_mapping if r.get("season") in seasons]
     log.info("Processing %d tribe assignments...", len(tribe_mapping))
 
     tribes_created = set()
@@ -152,8 +163,10 @@ def ingest_tribes(data_dir, name_lookup):
     log.info("Created %d tribes, %d player-tribe links", len(tribes_created), len(player_tribes))
 
 
-def ingest_votes(data_dir, name_lookup):
-    votes = load_json(data_dir, "vote_history.json")
+def ingest_votes(seasons, name_lookup):
+    votes = load_json("vote_history.json")
+    if seasons is not None:
+        votes = [r for r in votes if r.get("season") in seasons]
     log.info("Processing %d vote records...", len(votes))
 
     tribal_attendees = defaultdict(set)
@@ -187,8 +200,10 @@ def ingest_votes(data_dir, name_lookup):
             link_tribal_attendee(season, episode, player)
 
 
-def ingest_challenges(data_dir, name_lookup):
-    results = load_json(data_dir, "challenge_results.json")
+def ingest_challenges(seasons, name_lookup):
+    results = load_json("challenge_results.json")
+    if seasons is not None:
+        results = [r for r in results if r.get("season") in seasons]
 
     imm_wins = [r for r in results if r.get("won_individual_immunity") == 1]
     rew_wins = [r for r in results if r.get("won_individual_reward") == 1]
@@ -204,8 +219,10 @@ def ingest_challenges(data_dir, name_lookup):
         link_episode_reward(r["season"], r["episode"], full_name)
 
 
-def ingest_eliminations(data_dir, name_lookup):
-    boots = load_json(data_dir, "boot_order.json")
+def ingest_eliminations(seasons, name_lookup):
+    boots = load_json("boot_order.json")
+    if seasons is not None:
+        boots = [r for r in boots if r.get("season") in seasons]
     log.info("Ingesting %d eliminations...", len(boots))
     for r in tqdm(boots, desc="Eliminations"):
         full_name = resolve(name_lookup, r["season"], r["castaway"])
@@ -215,8 +232,10 @@ def ingest_eliminations(data_dir, name_lookup):
         link_episode_eliminated(r["season"], ep, full_name)
 
 
-def ingest_jury_votes(data_dir, name_lookup):
-    jury = load_json(data_dir, "jury_votes.json")
+def ingest_jury_votes(seasons, name_lookup):
+    jury = load_json("jury_votes.json")
+    if seasons is not None:
+        jury = [r for r in jury if r.get("season") in seasons]
     voted_for = [r for r in jury if r.get("vote") == 1]
     log.info("Ingesting %d jury votes (of %d total records)...", len(voted_for), len(jury))
     for r in tqdm(voted_for, desc="Jury"):
@@ -275,15 +294,12 @@ def main():
     parser.add_argument("--seasons", type=str, help="Comma-separated season numbers (skip clear_graph)")
     args = parser.parse_args()
 
-    data_dir = Path(os.getenv("SURVIVOR_DATA_DIR", "data/survivoR"))
-    if not data_dir.is_absolute():
-        data_dir = Path(__file__).resolve().parent.parent / data_dir
+    seasons = None
+    if args.seasons:
+        seasons = {int(s.strip()) for s in args.seasons.split(",") if s.strip()}
+        seasons = {s for s in seasons if 1 <= s <= MAX_SEASON}
 
-    if not data_dir.exists():
-        log.error("survivoR data directory not found: %s", data_dir)
-        sys.exit(1)
-
-    log.info("Loading survivoR data from %s", data_dir)
+    log.info("Loading survivoR data from %s", SURVIVOR_DATA_BASE)
 
     if not args.seasons:
         log.info("Full rebuild: wiping existing graph...")
@@ -291,15 +307,15 @@ def main():
 
     setup_constraints()
 
-    ingest_seasons(data_dir)
-    castaways = ingest_players(data_dir)
+    ingest_seasons(seasons)
+    castaways = ingest_players(seasons)
     name_lookup = build_name_lookup(castaways)
-    ingest_episodes(data_dir)
-    ingest_tribes(data_dir, name_lookup)
-    ingest_votes(data_dir, name_lookup)
-    ingest_challenges(data_dir, name_lookup)
-    ingest_eliminations(data_dir, name_lookup)
-    ingest_jury_votes(data_dir, name_lookup)
+    ingest_episodes(seasons)
+    ingest_tribes(seasons, name_lookup)
+    ingest_votes(seasons, name_lookup)
+    ingest_challenges(seasons, name_lookup)
+    ingest_eliminations(seasons, name_lookup)
+    ingest_jury_votes(seasons, name_lookup)
 
     print_coverage()
     log.info("Done.")
