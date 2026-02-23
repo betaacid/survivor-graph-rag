@@ -117,7 +117,10 @@ def process_season(html_path, season_title):
 
     classified = []
     for i, table in enumerate(raw_tables):
-        if has_custom_voting and _looks_like_voting_table(table):
+        if len(table.get("columns", [])) > 50:
+            log.info("  Skipping table %d with %d columns (likely viewership/ratings)", i, len(table["columns"]))
+            classification = {"table_type": "other", "column_mapping": {}, "notes": "Skipped: too many columns"}
+        elif has_custom_voting and _looks_like_voting_table(table):
             log.info("  Skipping Groq call for table %d (voting history already custom-parsed)", i)
             classification = {"table_type": "other", "column_mapping": {}, "notes": "Skipped: custom parser already extracted voting data"}
         elif has_custom_jury and _looks_like_jury_table(table):

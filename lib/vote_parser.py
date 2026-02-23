@@ -30,18 +30,12 @@ def _find_voting_history_table(soup):
     if not heading:
         return None
 
-    node = heading
-    while node:
-        node = node.find_next_sibling() if hasattr(node, "find_next_sibling") else None
-        if node is None:
-            node = heading.parent
-            if node:
-                node = node.find_next_sibling()
-        if node is None:
-            break
-        if isinstance(node, Tag) and node.name == "table" and "wikitable" in (node.get("class") or []):
+    for node in heading.find_all_next():
+        if not isinstance(node, Tag):
+            continue
+        if node.name == "table" and "wikitable" in (node.get("class") or []):
             return node
-        if isinstance(node, Tag) and node.name in ("h2", "h3"):
+        if node.name in ("h2",):
             break
     return None
 
