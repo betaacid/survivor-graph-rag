@@ -3,11 +3,68 @@ import time
 import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
+from streamlit_agraph import Config, Edge, Node, agraph
 
 load_dotenv()
 
-from lib.neo4j_client import get_node_counts
+from lib.neo4j_client import fetch_subgraph_for_results, get_node_counts
 from lib.query import DEMO_QUESTIONS, query_graph_rag, query_traditional_rag
+
+LABEL_COLORS = {
+    "Season": "#e74c3c",
+    "Player": "#3498db",
+    "PlayerSeason": "#2ecc71",
+    "Episode": "#f39c12",
+    "Tribe": "#9b59b6",
+}
+
+NODE_DISPLAY_KEY = {
+    "Season": "title",
+    "Player": "name",
+    "PlayerSeason": "player_name",
+    "Episode": "episode_number",
+    "Tribe": "name",
+}
+
+
+def build_agraph(nodes_data, edges_data):
+    ag_nodes = []
+    ag_edges = []
+    seen_edges = set()
+
+    for n in nodes_data:
+        label = n["labels"][0] if n["labels"] else "Unknown"
+        props = n.get("props", {})
+        display_key = NODE_DISPLAY_KEY.get(label)
+        title = str(props.get(display_key, "")) if display_key else ""
+        if not title:
+            title = str(props.get("name", props.get("title", props.get("player_name", n["id"]))))
+
+        tooltip_parts = [f"{label}"]
+        for k, v in props.items():
+            tooltip_parts.append(f"  {k}: {v}")
+        tooltip = "\n".join(tooltip_parts)
+
+        ag_nodes.append(Node(
+            id=n["id"],
+            label=title,
+            size=25,
+            color=LABEL_COLORS.get(label, "#95a5a6"),
+            title=tooltip,
+        ))
+
+    for e in edges_data:
+        edge_key = (e["source"], e["target"], e["type"])
+        if edge_key in seen_edges:
+            continue
+        seen_edges.add(edge_key)
+        ag_edges.append(Edge(
+            source=e["source"],
+            target=e["target"],
+            label=e["type"],
+        ))
+
+    return ag_nodes, ag_edges
 
 st.set_page_config(page_title="Survivor RAG", page_icon="🏝️", layout="wide")
 
@@ -118,5 +175,21 @@ if run and question.strip():
                             except Exception:
                                 for i, row in enumerate(graph_rows[:50]):
                                     st.text(f"Row {i+1}: {row}")
+
+                        with st.expander("Graph Visualization", expanded=True):
+                            with st.spinner("Loading subgraph..."):
+                                sg_nodes, sg_edges = fetch_subgraph_for_results(graph_rows)
+                            if sg_nodes:
+                                ag_nodes, ag_edges = build_agraph(sg_nodes, sg_edges)
+                                config = Config(
+                                    width=700,
+                                    height=500,
+                                    directed=True,
+                                    physics=True,
+                                    hierarchical=False,
+                                )
+                                agraph(nodes=ag_nodes, edges=ag_edges, config=config)
+                            else:
+                                st.info("No graph structure to visualize for this query.")
                 except Exception as e:
                     st.error(f"Graph RAG failed: {e}")
