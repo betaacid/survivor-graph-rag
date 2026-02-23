@@ -100,14 +100,22 @@ CYPHER_EXAMPLES = [
         "Across all seasons, who has the highest number of individual immunity wins?",
         "MATCH (e:Episode)-[:IMMUNITY_WON_BY]->(ps:PlayerSeason) RETURN ps.player_name, count(e) AS wins ORDER BY wins DESC LIMIT 10",
     ),
+    (
+        "Who was eliminated in each episode of Survivor 41?",
+        "MATCH (e:Episode {season_number: 41})-[:ELIMINATED]->(ps:PlayerSeason) RETURN e.episode_number, ps.player_name ORDER BY e.episode_number",
+    ),
+    (
+        "Who won reward challenges in Survivor 41?",
+        "MATCH (e:Episode {season_number: 41})-[:REWARD_WON_BY]->(ps:PlayerSeason) RETURN e.episode_number, ps.player_name ORDER BY e.episode_number",
+    ),
 ]
 
 TERMINOLOGY_MAP = """Terminology mappings:
 - "winner" / "won the season" -> PlayerSeason node where exit_type = 'winner'
 - "runner-up" -> PlayerSeason node where exit_type = 'runner_up'
-- "voted out" / "eliminated" -> exit_type = 'voted_out', or the [:ELIMINATED] relationship from Episode
-- "immunity win" / "won immunity" -> [:IMMUNITY_WON_BY] relationship from Episode to PlayerSeason (NOT a property)
-- "reward win" -> [:REWARD_WON_BY] relationship from Episode to PlayerSeason (NOT a property)
+- "voted out" / "eliminated" -> exit_type = 'voted_out' on PlayerSeason, or (Episode)-[:ELIMINATED]->(PlayerSeason) to find WHO was eliminated in a specific episode
+- "immunity win" / "won immunity" -> (Episode)-[:IMMUNITY_WON_BY]->(PlayerSeason) relationship (NOT a property on any node)
+- "reward win" / "won reward" / "reward challenge" -> (Episode)-[:REWARD_WON_BY]->(PlayerSeason) relationship (NOT a property on any node)
 - "tribe" / "team" -> (:Tribe) node accessed via [:MEMBER_OF] from PlayerSeason
 - "season N" / "Survivor N" -> Season.number = N or PlayerSeason.season_number = N
 - "jury member" -> PlayerSeason.jury_member property (boolean)
