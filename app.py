@@ -2,8 +2,9 @@ import time
 
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 from dotenv import load_dotenv
-from streamlit_agraph import Config, Edge, Node, agraph
+from pyvis.network import Network
 
 load_dotenv()
 
@@ -27,44 +28,43 @@ NODE_DISPLAY_KEY = {
 }
 
 
-def build_agraph(nodes_data, edges_data):
-    ag_nodes = []
-    ag_edges = []
+def build_pyvis(nodes_data, edges_data, height="500px", width="100%"):
+    net = Network(height=height, width=width, directed=True, bgcolor="#ffffff", font_color="#333333")
+    net.barnes_hut(gravity=-3000, central_gravity=0.3, spring_length=150)
     seen_edges = set()
 
     for n in nodes_data:
         label = n["labels"][0] if n["labels"] else "Unknown"
         props = n.get("props", {})
         display_key = NODE_DISPLAY_KEY.get(label)
-        title = str(props.get(display_key, "")) if display_key else ""
-        if not title:
-            title = str(props.get("name", props.get("title", props.get("player_name", n["id"]))))
+        display = str(props.get(display_key, "")) if display_key else ""
+        if not display:
+            display = str(props.get("name", props.get("title", props.get("player_name", n["id"]))))
 
-        tooltip_parts = [f"{label}"]
+        tooltip_parts = [f"<b>{label}</b>"]
         for k, v in props.items():
-            tooltip_parts.append(f"  {k}: {v}")
-        tooltip = "\n".join(tooltip_parts)
+            tooltip_parts.append(f"{k}: {v}")
+        tooltip = "<br>".join(tooltip_parts)
 
-        ag_nodes.append(Node(
-            id=n["id"],
-            label=title,
-            size=25,
-            color=LABEL_COLORS.get(label, "#95a5a6"),
+        net.add_node(
+            n["id"],
+            label=display,
             title=tooltip,
-        ))
+            color=LABEL_COLORS.get(label, "#95a5a6"),
+            size=20,
+        )
 
     for e in edges_data:
         edge_key = (e["source"], e["target"], e["type"])
         if edge_key in seen_edges:
             continue
         seen_edges.add(edge_key)
-        ag_edges.append(Edge(
-            source=e["source"],
-            target=e["target"],
-            label=e["type"],
-        ))
+        net.add_edge(e["source"], e["target"], title=e["type"], label=e["type"])
 
-    return ag_nodes, ag_edges
+    html = net.generate_html()
+    html = html.replace("<body>", "<body style='margin:0; padding:0;'>")
+    return html
+
 
 st.set_page_config(page_title="Survivor RAG", page_icon="🏝️", layout="wide")
 
@@ -80,6 +80,8 @@ st.markdown(
 
 if "question" not in st.session_state:
     st.session_state.question = ""
+if "results" not in st.session_state:
+    st.session_state.results = None
 
 
 def set_question(q):
@@ -127,8 +129,45 @@ run = st.button("Run", type="primary", disabled=not question.strip())
 if run and question.strip():
     run_trad = mode in ("Both (side-by-side)", "Traditional RAG")
     run_graph = mode in ("Both (side-by-side)", "Graph RAG")
+    st.session_state.results = {
+        "question": question,
+        "mode": mode,
+        "trad_answer": None,
+        "trad_chunks": None,
+        "trad_elapsed": None,
+        "graph_answer": None,
+        "cypher": None,
+        "graph_rows": None,
+        "graph_elapsed": None,
+    }
+    if run_trad:
+        with st.spinner("Searching chunks & generating answer..."):
+            t0 = time.time()
+            try:
+                trad_answer, trad_chunks = query_traditional_rag(question)
+                st.session_state.results["trad_answer"] = trad_answer
+                st.session_state.results["trad_chunks"] = trad_chunks
+                st.session_state.results["trad_elapsed"] = time.time() - t0
+            except Exception as e:
+                st.session_state.results["trad_error"] = str(e)
+    if run_graph:
+        with st.spinner("Generating Cypher & querying graph..."):
+            t0 = time.time()
+            try:
+                graph_answer, cypher, graph_rows = query_graph_rag(question)
+                st.session_state.results["graph_answer"] = graph_answer
+                st.session_state.results["cypher"] = cypher
+                st.session_state.results["graph_rows"] = graph_rows
+                st.session_state.results["graph_elapsed"] = time.time() - t0
+            except Exception as e:
+                st.session_state.results["graph_error"] = str(e)
 
-    if mode == "Both (side-by-side)":
+if st.session_state.results and st.session_state.results.get("question") == question:
+    r = st.session_state.results
+    run_trad = r["mode"] in ("Both (side-by-side)", "Traditional RAG")
+    run_graph = r["mode"] in ("Both (side-by-side)", "Graph RAG")
+
+    if r["mode"] == "Both (side-by-side)":
         col_trad, col_graph = st.columns(2)
     else:
         col_trad = col_graph = st.container()
@@ -136,60 +175,58 @@ if run and question.strip():
     if run_trad:
         with col_trad:
             st.subheader("Traditional RAG")
-            with st.spinner("Searching chunks & generating answer..."):
-                t0 = time.time()
-                try:
-                    trad_answer, trad_chunks = query_traditional_rag(question)
-                    elapsed = time.time() - t0
-                    st.markdown(trad_answer)
-                    st.caption(f"{elapsed:.1f}s  |  {len(trad_chunks)} chunks retrieved")
-                    with st.expander("Retrieved context chunks"):
-                        for i, chunk in enumerate(trad_chunks):
-                            st.markdown(
-                                f"**Chunk {i+1}** — {chunk['season_title']} "
-                                f"(similarity: {chunk['similarity']:.3f})"
-                            )
-                            st.text(chunk["content"][:500])
-                            if i < len(trad_chunks) - 1:
-                                st.divider()
-                except Exception as e:
-                    st.error(f"Traditional RAG failed: {e}")
+            if r.get("trad_error"):
+                st.error(f"Traditional RAG failed: {r['trad_error']}")
+            else:
+                st.markdown(r["trad_answer"])
+                st.caption(f"{r['trad_elapsed']:.1f}s  |  {len(r['trad_chunks'])} chunks retrieved")
+                with st.expander("Retrieved context chunks"):
+                    for i, chunk in enumerate(r["trad_chunks"]):
+                        st.markdown(
+                            f"**Chunk {i+1}** — {chunk['season_title']} "
+                            f"(similarity: {chunk['similarity']:.3f})"
+                        )
+                        st.text(chunk["content"][:500])
+                        if i < len(r["trad_chunks"]) - 1:
+                            st.divider()
 
     if run_graph:
         with col_graph:
             st.subheader("Graph RAG")
-            with st.spinner("Generating Cypher & querying graph..."):
-                t0 = time.time()
-                try:
-                    graph_answer, cypher, graph_rows = query_graph_rag(question)
-                    elapsed = time.time() - t0
-                    st.markdown(graph_answer)
-                    row_count = len(graph_rows) if isinstance(graph_rows, list) else 0
-                    st.caption(f"{elapsed:.1f}s  |  {row_count} rows returned")
-                    st.code(cypher, language="cypher")
-                    if graph_rows:
-                        with st.expander(f"Raw graph results ({row_count} rows)"):
-                            try:
-                                df = pd.DataFrame(graph_rows)
-                                st.dataframe(df, use_container_width=True)
-                            except Exception:
-                                for i, row in enumerate(graph_rows[:50]):
-                                    st.text(f"Row {i+1}: {row}")
+            if r.get("graph_error"):
+                st.error(f"Graph RAG failed: {r['graph_error']}")
+            else:
+                st.markdown(r["graph_answer"])
+                row_count = len(r["graph_rows"]) if isinstance(r["graph_rows"], list) else 0
+                st.caption(f"{r['graph_elapsed']:.1f}s  |  {row_count} rows returned")
+                st.code(r["cypher"], language="cypher")
+                if r["graph_rows"]:
+                    with st.expander(f"Raw graph results ({row_count} rows)"):
+                        try:
+                            df = pd.DataFrame(r["graph_rows"])
+                            st.dataframe(df, width="stretch")
+                        except Exception:
+                            for i, row in enumerate(r["graph_rows"][:50]):
+                                st.text(f"Row {i+1}: {row}")
 
-                        with st.expander("Graph Visualization", expanded=True):
-                            with st.spinner("Loading subgraph..."):
-                                sg_nodes, sg_edges = fetch_subgraph_for_results(graph_rows)
-                            if sg_nodes:
-                                ag_nodes, ag_edges = build_agraph(sg_nodes, sg_edges)
-                                config = Config(
-                                    width=700,
-                                    height=500,
-                                    directed=True,
-                                    physics=True,
-                                    hierarchical=False,
-                                )
-                                agraph(nodes=ag_nodes, edges=ag_edges, config=config)
-                            else:
-                                st.info("No graph structure to visualize for this query.")
-                except Exception as e:
-                    st.error(f"Graph RAG failed: {e}")
+                    st.checkbox("Show graph full-width", key="graph_viz_fullscreen")
+
+    fullscreen = st.session_state.get("graph_viz_fullscreen", False)
+    if run_graph and not r.get("graph_error") and r.get("graph_rows"):
+        with st.spinner("Loading subgraph..."):
+            sg_nodes, sg_edges = fetch_subgraph_for_results(r["graph_rows"])
+        if sg_nodes:
+            if fullscreen:
+                st.divider()
+                st.subheader("Graph Visualization")
+                graph_html = build_pyvis(sg_nodes, sg_edges, height="90vh", width="100%")
+                components.html(graph_html, height=900, scrolling=False)
+            else:
+                with col_graph:
+                    st.markdown("**Graph Visualization**")
+                    graph_html = build_pyvis(sg_nodes, sg_edges, height="500px", width="100%")
+                    components.html(graph_html, height=520, scrolling=False)
+        else:
+            target = st if fullscreen else col_graph
+            with target if not fullscreen else st.container():
+                st.info("No graph structure to visualize for this query.")
