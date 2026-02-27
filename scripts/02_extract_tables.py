@@ -12,7 +12,7 @@ load_dotenv()
 
 from tqdm import tqdm
 
-from lib.llm import groq_strict
+from lib.llm import chat_strict
 from lib.table_parser import extract_tables_from_html
 from lib.vote_parser import parse_jury_vote, parse_voting_history
 
@@ -92,7 +92,7 @@ Number of rows: {table_meta['num_rows']}
 Sample rows:
 {table_meta['sample_rows']}
 """
-    result = groq_strict(CLASSIFY_SYSTEM, user_prompt, CLASSIFY_SCHEMA, schema_name="table_classification")
+    result = chat_strict(CLASSIFY_SYSTEM, user_prompt, CLASSIFY_SCHEMA, schema_name="table_classification")
     mapping_dict = {m["source_column"]: m["canonical_column"] for m in result.get("mappings", [])}
     result["column_mapping"] = mapping_dict
     return result
@@ -121,10 +121,10 @@ def process_season(html_path, season_title):
             log.info("  Skipping table %d with %d columns (likely viewership/ratings)", i, len(table["columns"]))
             classification = {"table_type": "other", "column_mapping": {}, "notes": "Skipped: too many columns"}
         elif has_custom_voting and _looks_like_voting_table(table):
-            log.info("  Skipping Groq call for table %d (voting history already custom-parsed)", i)
+            log.info("  Skipping LLM call for table %d (voting history already custom-parsed)", i)
             classification = {"table_type": "other", "column_mapping": {}, "notes": "Skipped: custom parser already extracted voting data"}
         elif has_custom_jury and _looks_like_jury_table(table):
-            log.info("  Skipping Groq call for table %d (jury vote already custom-parsed)", i)
+            log.info("  Skipping LLM call for table %d (jury vote already custom-parsed)", i)
             classification = {"table_type": "other", "column_mapping": {}, "notes": "Skipped: custom parser already extracted jury data"}
         else:
             try:

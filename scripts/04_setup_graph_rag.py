@@ -13,7 +13,7 @@ load_dotenv()
 
 from tqdm import tqdm
 
-from lib.llm import groq_strict
+from lib.llm import chat_strict
 from lib.neo4j_client import (
     add_jury_vote,
     add_vote,
@@ -240,10 +240,10 @@ Rows:
 """
 
     try:
-        result = groq_strict(NORMALIZE_SYSTEM, user_prompt, schema, schema_name=schema_name)
+        result = chat_strict(NORMALIZE_SYSTEM, user_prompt, schema, schema_name=schema_name)
         return table_type, result
     except Exception as e:
-        log.warning("Groq normalization failed for %s / %s: %s", season_title, table_type, e)
+        log.warning("Normalization failed for %s / %s: %s", season_title, table_type, e)
         return table_type, None
 
 

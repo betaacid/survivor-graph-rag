@@ -19,7 +19,7 @@ SCRIPTS = [
     ROOT / "scripts" / "05_demo_queries.py",
 ]
 
-REQUIRED_ENV = ["OPENAI_API_KEY", "GROQ_API_KEY", "NEO4J_URI", "NEO4J_PASSWORD", "DATABASE_URL"]
+REQUIRED_ENV = ["OPENAI_API_KEY", "NEO4J_URI", "NEO4J_PASSWORD", "DATABASE_URL"]
 
 
 def check_env():

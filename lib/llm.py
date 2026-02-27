@@ -5,7 +5,6 @@ import os
 from openai import OpenAI
 
 _openai_client = None
-_groq_client = None
 log = logging.getLogger(__name__)
 
 
@@ -14,16 +13,6 @@ def get_openai_client():
     if _openai_client is None:
         _openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
     return _openai_client
-
-
-def get_groq_client():
-    global _groq_client
-    if _groq_client is None:
-        _groq_client = OpenAI(
-            api_key=os.getenv("GROQ_API_KEY"),
-            base_url=os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1"),
-        )
-    return _groq_client
 
 
 def chat(system_prompt, user_prompt, model="gpt-5.2", temperature=0, max_tokens=4096):
@@ -70,14 +59,13 @@ def chat_with_tools(messages, tools, model="gpt-5.2", temperature=0):
     return resp.choices[0].message
 
 
-def groq_strict(system_prompt, user_prompt, schema, schema_name="response"):
-    client = get_groq_client()
-    model = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
-    log.debug("Groq strict request, model=%s schema=%s", model, schema_name)
+def chat_strict(system_prompt, user_prompt, schema, schema_name="response", model="gpt-4o-mini"):
+    client = get_openai_client()
+    log.debug("Strict schema request, model=%s schema=%s", model, schema_name)
     resp = client.chat.completions.create(
         model=model,
         temperature=0,
-        max_tokens=16384,
+        max_completion_tokens=16384,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},

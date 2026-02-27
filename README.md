@@ -10,7 +10,7 @@ The point of the project is to show where each approach works well and where it 
 
 ## Setup
 
-You need [uv](https://docs.astral.sh/uv/) (Python 3.11+), Docker, and API keys for OpenAI and Groq.
+You need [uv](https://docs.astral.sh/uv/) (Python 3.11+), Docker, and an OpenAI API key.
 
 ```bash
 git clone <repo-url> && cd survivorgraph
@@ -27,8 +27,7 @@ The `.env` file needs:
 
 | Variable | What it is |
 |---|---|
-| `OPENAI_API_KEY` | Used for embeddings (text-embedding-3-small) and all chat completions (GPT) |
-| `GROQ_API_KEY` | Used during Wikipedia table extraction and normalization (the LLM-heavy ingestion path) |
+| `OPENAI_API_KEY` | Used for embeddings, chat completions, and structured outputs (table classification, normalization) |
 | `NEO4J_URI` | Defaults to `bolt://localhost:7687` |
 | `NEO4J_PASSWORD` | Defaults to `survivor` |
 | `DATABASE_URL` | Postgres connection string, defaults to `postgresql://postgres:survivor@localhost:5433/survivor_rag` |
@@ -57,7 +56,7 @@ It clears the graph first (unless you pass `--seasons 41,45` to target specific 
 
 ### Option B: Wikipedia pipeline (slower, uses LLM calls)
 
-This is the original pipeline. It downloads Wikipedia pages, extracts tables, classifies them with Groq, normalizes the data with another LLM call, then ingests into Neo4j. It also chunks the text and embeds it into pgvector for Traditional RAG.
+This is the original pipeline. It downloads Wikipedia pages, extracts tables, classifies and normalizes them with OpenAI, then ingests into Neo4j. It also chunks the text and embeds it into pgvector for Traditional RAG.
 
 ```bash
 uv run python run_all.py        # full run
@@ -69,9 +68,9 @@ Or run scripts individually:
 ```bash
 uv run python scripts/00_reset_databases.py       # clear Neo4j + Postgres
 uv run python scripts/01_download_seasons.py       # fetch Wikipedia HTML
-uv run python scripts/02_extract_tables.py         # classify tables (Groq LLM calls)
+uv run python scripts/02_extract_tables.py         # classify tables (OpenAI)
 uv run python scripts/03_setup_traditional_rag.py  # chunk, embed, store in pgvector
-uv run python scripts/04_setup_graph_rag.py        # normalize + ingest into Neo4j (Groq LLM calls)
+uv run python scripts/04_setup_graph_rag.py        # normalize + ingest into Neo4j (OpenAI)
 ```
 
 Scripts 02 and 04 are where the LLM calls happen. Script 03 makes OpenAI embedding API calls (cheap, but still API calls). Scripts 00 and 01 don't call any APIs beyond Wikipedia.
@@ -173,7 +172,7 @@ lib/
   traditional_rag.py   # vector search query path
   graph_rag.py         # text2cypher query path, schema, few-shot examples
   agentic_rag.py       # rewriter, router, tool registry, critic
-  llm.py               # OpenAI and Groq client wrappers
+  llm.py               # OpenAI client wrappers
   neo4j_client.py      # all Neo4j reads and writes
   pg_client.py         # pgvector schema, inserts, similarity search
   embeddings.py        # OpenAI embedding wrapper
