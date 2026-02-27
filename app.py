@@ -9,8 +9,10 @@ from pyvis.network import Network
 load_dotenv()
 
 from lib.agentic_rag import query_agentic_rag
+from lib.demo_questions import DEMO_QUESTIONS
+from lib.graph_rag import query_graph_rag
 from lib.neo4j_client import fetch_subgraph_for_results, get_node_counts
-from lib.query import DEMO_QUESTIONS, query_graph_rag, query_traditional_rag
+from lib.traditional_rag import query_traditional_rag
 
 LABEL_COLORS = {
     "Season": "#e74c3c",

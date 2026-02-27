@@ -3,7 +3,7 @@ import logging
 
 from lib.llm import chat, chat_json, chat_with_tools
 from lib.neo4j_client import run_query
-from lib.query import run_text2cypher
+from lib.graph_rag import run_text2cypher
 
 log = logging.getLogger(__name__)
 

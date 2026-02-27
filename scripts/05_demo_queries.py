@@ -16,7 +16,9 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 log = logging.getLogger(__name__)
 
-from lib.query import DEMO_QUESTIONS, query_graph_rag, query_traditional_rag
+from lib.demo_questions import DEMO_QUESTIONS
+from lib.graph_rag import query_graph_rag
+from lib.traditional_rag import query_traditional_rag
 
 
 def print_divider(char="=", width=80):

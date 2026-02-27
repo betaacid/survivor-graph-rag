@@ -1,53 +1,9 @@
 import logging
 
-from lib.embeddings import embed_query
 from lib.llm import chat
 from lib.neo4j_client import get_graph_schema, run_query
-from lib.pg_client import search_similar
 
 log = logging.getLogger(__name__)
-
-DEMO_QUESTIONS = [
-    {
-        "category": "Traditional RAG is Best",
-        "questions": [
-            "Why was Michael Skupin medically evacuated in Survivor: The Australian Outback?",
-            "What was the overall fan reception of Survivor 48?",
-            "Describe the strategic gameplay of the merge in Survivor: Cagayan.",
-        ],
-    },
-    {
-        "category": "Graph RAG is Best",
-        "questions": [
-            "Which player has played in the most seasons of Survivor?",
-            "How many total tribal councils have there been across all 49 seasons?",
-            "List all Survivor winners and how many jury votes each received.",
-            "Who were all the jury members in Survivor: The Australian Outback?",
-            "Find every instance where a player voted for someone who later voted them out in the same season.",
-            "Show all players who competed in 3 or more seasons.",
-            "Which seasons had a medical evacuation?",
-        ],
-    },
-    {
-        "category": "Graph RAG Needs Custom Work",
-        "questions": [
-            "Across all seasons, who has the highest number of individual immunity challenge wins?",
-            "What is the most common episode number for eliminations across all seasons?",
-        ],
-    },
-    {
-        "category": "Agentic RAG is Best",
-        "questions": [
-            "Who has the most individual immunity wins, and how many seasons did they play?",
-            "Who won Survivor 45, and who were the jury members that season?",
-            "Which players competed in 4 or more seasons, and which of them won the most reward challenges?",
-        ],
-    },
-]
-
-TRAD_RAG_SYSTEM = """You are a Survivor TV show expert answering questions using only the provided context passages.
-If the context doesn't contain enough information to answer confidently, say so.
-Be specific and cite which season/episode when relevant."""
 
 GRAPH_RAG_SYSTEM = """You are a Survivor TV show expert. You have been given structured query results from a graph database.
 Answer the question using ONLY the data provided in the query results below. Do not supplement with your own knowledge or make assumptions beyond what the data shows.
@@ -199,22 +155,6 @@ def clean_cypher(raw):
     if cypher.endswith("```"):
         cypher = cypher[:-3].rstrip()
     return cypher.strip()
-
-
-def query_traditional_rag(question):
-    query_emb = embed_query(question)
-    results = search_similar(query_emb, top_k=6)
-
-    context_parts = []
-    for r in results:
-        context_parts.append(f"[{r['season_title']}] (similarity: {r['similarity']:.3f})\n{r['content']}")
-    context = "\n\n---\n\n".join(context_parts)
-
-    answer = chat(
-        TRAD_RAG_SYSTEM,
-        f"Context:\n{context}\n\nQuestion: {question}",
-    )
-    return answer, results
 
 
 def run_text2cypher(question):
