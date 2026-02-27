@@ -155,6 +155,16 @@ The prebuilt tools are the key improvement. Text2cypher guesses at query structu
 
 The code lives in `lib/agentic_rag.py`.
 
+### Why the Wikipedia pipeline was replaced
+
+The original plan was to build the graph entirely from Wikipedia: download the season pages, use an LLM to classify and normalize the HTML tables, load the result into Neo4j. It worked, but the data quality wasn't good enough.
+
+The 49 season pages were written by different editors over 20+ years. Column names vary ("Finish" vs "Placement" vs "Result"), tables use `colspan` in unpredictable ways, and cell values are littered with footnote markers and brackets. The LLM could classify simple tables like contestants and episodes, but it struggled with voting history and jury vote tables, which have unusual layouts. The normalization step was worse -- it would drop players, misattribute votes, or hallucinate exit types, and with hundreds of rows across 49 seasons those errors were hard to catch.
+
+We ended up writing custom BeautifulSoup parsers for voting and jury tables (`lib/vote_parser.py`), but even those miss edge cases. Name matching across tables was another problem -- "Ozzy" in one table vs "Oscar 'Ozzy' Lusth" in another.
+
+The survivoR dataset (`scripts/05_ingest_survivoR.py`) exists because of all this. Pre-cleaned data, consistent identifiers, full coverage of all 49 seasons, zero LLM calls, 45 seconds to load. The Wikipedia pipeline is still in the codebase as the only source of long-form text for Traditional RAG, but for the graph, the survivoR path is what we actually use.
+
 ### Where each approach works
 
 | Question type | Traditional RAG | Graph RAG | Agentic RAG |
