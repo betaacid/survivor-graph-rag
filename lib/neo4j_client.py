@@ -57,6 +57,34 @@ def setup_constraints():
             log.debug("Index (may already exist): %s", e)
 
 
+def setup_document_constraints():
+    log.info("Setting up Document/Chunk constraints and indexes...")
+    stmts = [
+        "CREATE CONSTRAINT IF NOT EXISTS FOR (d:Document) REQUIRE d.doc_id IS UNIQUE",
+        "CREATE CONSTRAINT IF NOT EXISTS FOR (c:Chunk) REQUIRE c.chunk_id IS UNIQUE",
+        "CREATE FULLTEXT INDEX chunkTextIndex IF NOT EXISTS FOR (c:Chunk) ON EACH [c.text]",
+    ]
+    for s in stmts:
+        try:
+            run_write(s)
+        except Exception as e:
+            log.debug("Document/Chunk schema (may already exist): %s", e)
+
+
+def search_chunks_fulltext(query, k=8):
+    return run_query(
+        """
+        CALL db.index.fulltext.queryNodes('chunkTextIndex', $query)
+        YIELD node, score
+        RETURN node.chunk_id AS chunk_id, node.text AS text,
+               node.section AS section, node.doc_id AS doc_id, score
+        ORDER BY score DESC
+        LIMIT $k
+        """,
+        {"query": query, "k": k},
+    )
+
+
 def clear_graph():
     run_write("MATCH (n) DETACH DELETE n")
 
@@ -377,6 +405,10 @@ def get_node_counts():
             MATCH (t:Tribe) RETURN 'Tribe' AS label, count(t) AS cnt
             UNION ALL
             MATCH (tc:TribalCouncil) RETURN 'TribalCouncil' AS label, count(tc) AS cnt
+            UNION ALL
+            MATCH (d:Document) RETURN 'Document' AS label, count(d) AS cnt
+            UNION ALL
+            MATCH (c:Chunk) RETURN 'Chunk' AS label, count(c) AS cnt
         }
         RETURN label, cnt
     """)

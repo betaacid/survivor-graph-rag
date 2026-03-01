@@ -20,6 +20,8 @@ LABEL_COLORS = {
     "PlayerSeason": "#2ecc71",
     "Episode": "#f39c12",
     "Tribe": "#9b59b6",
+    "Document": "#1abc9c",
+    "Chunk": "#7f8c8d",
 }
 
 NODE_DISPLAY_KEY = {
@@ -28,6 +30,8 @@ NODE_DISPLAY_KEY = {
     "PlayerSeason": "player_name",
     "Episode": "episode_number",
     "Tribe": "name",
+    "Document": "title",
+    "Chunk": "chunk_id",
 }
 
 
@@ -186,12 +190,12 @@ if st.session_state.results and st.session_state.results.get("question") == ques
     run_agentic = r["mode"] in ("All", "Agentic RAG")
 
     if r["mode"] == "All":
-        col_trad, col_graph, col_agentic = st.columns(3)
+        tab_trad, tab_graph, tab_agentic = st.tabs(["Traditional RAG", "Graph RAG", "Agentic RAG"])
     else:
-        col_trad = col_graph = col_agentic = st.container()
+        tab_trad = tab_graph = tab_agentic = st.container()
 
     if run_trad:
-        with col_trad:
+        with tab_trad:
             st.subheader("Traditional RAG")
             if r.get("trad_error"):
                 st.error(f"Traditional RAG failed: {r['trad_error']}")
@@ -209,7 +213,7 @@ if st.session_state.results and st.session_state.results.get("question") == ques
                             st.divider()
 
     if run_graph:
-        with col_graph:
+        with tab_graph:
             st.subheader("Graph RAG")
             if r.get("graph_error"):
                 st.error(f"Graph RAG failed: {r['graph_error']}")
@@ -222,7 +226,7 @@ if st.session_state.results and st.session_state.results.get("question") == ques
                     with st.expander(f"Raw graph results ({row_count} rows)"):
                         try:
                             df = pd.DataFrame(r["graph_rows"])
-                            st.dataframe(df, width="stretch")
+                            st.dataframe(df, use_container_width=True)
                         except Exception:
                             for i, row in enumerate(r["graph_rows"][:50]):
                                 st.text(f"Row {i+1}: {row}")
@@ -240,17 +244,17 @@ if st.session_state.results and st.session_state.results.get("question") == ques
                 graph_html = build_pyvis(sg_nodes, sg_edges, height="90vh", width="100%")
                 components.html(graph_html, height=900, scrolling=False)
             else:
-                with col_graph:
+                with tab_graph:
                     st.markdown("**Graph Visualization**")
                     graph_html = build_pyvis(sg_nodes, sg_edges, height="500px", width="100%")
                     components.html(graph_html, height=520, scrolling=False)
         else:
-            target = st if fullscreen else col_graph
+            target = st if fullscreen else tab_graph
             with target if not fullscreen else st.container():
                 st.info("No graph structure to visualize for this query.")
 
     if run_agentic:
-        with col_agentic:
+        with tab_agentic:
             st.subheader("Agentic RAG")
             if r.get("agentic_error"):
                 st.error(f"Agentic RAG failed: {r['agentic_error']}")

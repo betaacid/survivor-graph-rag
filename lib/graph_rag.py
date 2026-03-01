@@ -55,6 +55,18 @@ CYPHER_EXAMPLES = [
         "Which tribe went to tribal council in episode 3 of Survivor 41?",
         "MATCH (e:Episode {season_number: 41, episode_number: 3})-[:TRIBAL_COUNCIL_FOR]->(t:Tribe) RETURN t.name",
     ),
+    (
+        "What Wikipedia text mentions Parvati Shallow?",
+        "MATCH (p:Player {name: 'Parvati Shallow'})<-[:MENTIONS]-(c:Chunk) RETURN c.text, c.section, c.doc_id LIMIT 5",
+    ),
+    (
+        "Find text about the merge in Season 45.",
+        "CALL db.index.fulltext.queryNodes('chunkTextIndex', 'merge Season 45') YIELD node, score RETURN node.text AS text, node.section AS section, node.doc_id AS doc_id, score ORDER BY score DESC LIMIT 5",
+    ),
+    (
+        "What do the Wikipedia articles say about hidden immunity idols in Survivor 28?",
+        "MATCH (c:Chunk)-[:MENTIONS]->(s:Season {number: 28}) WHERE toLower(c.text) CONTAINS 'idol' RETURN c.text, c.section LIMIT 5",
+    ),
 ]
 
 TERMINOLOGY_MAP = """Terminology mappings:
@@ -74,7 +86,10 @@ TERMINOLOGY_MAP = """Terminology mappings:
 - "returning player" / "played multiple times" -> Player with multiple [:PLAYED_IN] relationships
 - "voted for" (during tribal council) -> [:CAST_VOTE] relationship between PlayerSeason nodes (has episode_number property)
 - "tribal council attendance" / "attended tribal" / "went to tribal" -> [:ATTENDED_TRIBAL] from PlayerSeason to TribalCouncil node
-- "which tribe went to tribal" -> (Episode)-[:TRIBAL_COUNCIL_FOR]->(Tribe)"""
+- "which tribe went to tribal" -> (Episode)-[:TRIBAL_COUNCIL_FOR]->(Tribe)
+- "text about" / "Wikipedia says" / "narrative" / "description of" / "what happened" -> use Chunk nodes via MENTIONS traversal or fulltext search
+- fulltext chunk search -> CALL db.index.fulltext.queryNodes('chunkTextIndex', $query) YIELD node, score
+- "mentions" / "talked about" -> (:Chunk)-[:MENTIONS]->(:Player) or (:Chunk)-[:MENTIONS]->(:Season) traversal"""
 
 FORMAT_INSTRUCTIONS = """Do not include any explanations or apologies in your responses.
 Do not respond to any questions that might ask anything else than for you to construct a Cypher statement.
@@ -90,6 +105,8 @@ _STATIC_SCHEMA = """Node labels and properties:
   Episode {season_number: INTEGER, episode_number: INTEGER, title: STRING, air_date: STRING, viewers_millions: FLOAT}
   Tribe {name: STRING, season_number: INTEGER, phase: STRING}
   TribalCouncil {season_number: INTEGER, episode_number: INTEGER}
+  Document {doc_id: STRING, source: STRING, url: STRING, title: STRING, fetched_at: STRING, hash: STRING}
+  Chunk {chunk_id: STRING, doc_id: STRING, text: STRING, section: STRING, idx: INTEGER, char_start: INTEGER, char_end: INTEGER}
 Relationship types and properties:
   HAS_EPISODE
   HAS_TRIBE
@@ -104,6 +121,8 @@ Relationship types and properties:
   TRIBAL_COUNCIL_FOR
   CAST_VOTE {episode_number: INTEGER}
   JURY_VOTE_FOR
+  HAS_CHUNK
+  MENTIONS {method: STRING}
 The relationships:
   (:Season)-[:HAS_EPISODE]->(:Episode)
   (:Season)-[:HAS_TRIBE]->(:Tribe)
@@ -117,7 +136,10 @@ The relationships:
   (:Episode)-[:ELIMINATED]->(:PlayerSeason)
   (:Episode)-[:IMMUNITY_WON_BY]->(:PlayerSeason)
   (:Episode)-[:REWARD_WON_BY]->(:PlayerSeason)
-  (:Episode)-[:TRIBAL_COUNCIL_FOR]->(:Tribe)"""
+  (:Episode)-[:TRIBAL_COUNCIL_FOR]->(:Tribe)
+  (:Document)-[:HAS_CHUNK]->(:Chunk)
+  (:Chunk)-[:MENTIONS]->(:Player)
+  (:Chunk)-[:MENTIONS]->(:Season)"""
 
 
 def build_cypher_system_prompt(schema=None):

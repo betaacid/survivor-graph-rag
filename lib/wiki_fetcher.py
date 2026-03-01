@@ -91,6 +91,41 @@ def html_to_plain_text(html):
     return text
 
 
+_CITE_RE = re.compile(r"\[\d+\]")
+
+
+def extract_sections(html):
+    soup = BeautifulSoup(html, "html.parser")
+    for tag in soup.select("table, .navbox, .mw-editsection, style, script, .reflist"):
+        tag.decompose()
+
+    sections = []
+    current_heading = "Introduction"
+    current_parts = []
+
+    for element in soup.children:
+        if element.name in ("h2", "h3"):
+            text = _CITE_RE.sub("", element.get_text(" ", strip=True))
+            if current_parts:
+                body = "\n".join(current_parts).strip()
+                if body:
+                    sections.append({"heading": current_heading, "text": body})
+            current_heading = text
+            current_parts = []
+        elif element.name in ("p", "div", "ul", "ol", "dl", "blockquote"):
+            text = _CITE_RE.sub("", element.get_text("\n", strip=True))
+            text = re.sub(r"\n{3,}", "\n\n", text).strip()
+            if text:
+                current_parts.append(text)
+
+    if current_parts:
+        body = "\n".join(current_parts).strip()
+        if body:
+            sections.append({"heading": current_heading, "text": body})
+
+    return sections
+
+
 def download_all_seasons(output_dir, limit=None, fresh=False):
     output_dir = Path(output_dir)
     html_dir = output_dir / "raw_html"

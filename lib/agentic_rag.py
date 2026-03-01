@@ -2,7 +2,7 @@ import json
 import logging
 
 from lib.llm import chat, chat_json, chat_with_tools
-from lib.neo4j_client import run_query
+from lib.neo4j_client import run_query, search_chunks_fulltext
 from lib.graph_rag import run_text2cypher
 
 log = logging.getLogger(__name__)
@@ -86,6 +86,17 @@ def players_multiple_seasons(min_seasons: int = 2):
         "ORDER BY seasons DESC"
     )
     return cypher, run_query(cypher, {"min": min_seasons})
+
+
+def search_chunks(query: str, limit: int = 8):
+    results = search_chunks_fulltext(query, k=limit)
+    cypher = (
+        f"CALL db.index.fulltext.queryNodes('chunkTextIndex', '{query}') "
+        f"YIELD node, score "
+        f"RETURN node.chunk_id, node.text, node.section, node.doc_id, score "
+        f"ORDER BY score DESC LIMIT {limit}"
+    )
+    return cypher, results
 
 
 # ---------------------------------------------------------------------------
@@ -230,6 +241,29 @@ TOOLS = {
             },
         },
     },
+    "search_chunks": {
+        "function": search_chunks,
+        "description": {
+            "type": "function",
+            "function": {
+                "name": "search_chunks",
+                "description": (
+                    "Search Wikipedia text chunks stored in the graph using full-text keyword search. "
+                    "Use this for narrative questions, descriptions, controversies, strategies, "
+                    "or any question about what happened that isn't captured in structured data "
+                    "(e.g. 'What happened at the merge?', 'Tell me about the controversies in Season 39')."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Search keywords or phrase"},
+                        "limit": {"type": "integer", "description": "Max chunks to return (default 8)"},
+                    },
+                    "required": ["query"],
+                },
+            },
+        },
+    },
     "text2cypher": {
         "function": None,
         "description": {
@@ -283,6 +317,9 @@ _ROUTER_PROMPT = """\
 Your job is to choose the right tool to answer the user's Survivor TV show question.
 Pick the most specific tool that fits. Only fall back to text2cypher when no \
 specialized tool matches.
+Use search_chunks for narrative questions, descriptions, or background information \
+that isn't captured in structured graph data (e.g. "What happened at the merge?", \
+"Tell me about the controversies in Season 39", "What was the strategy?").
 Make sure to pass the correct and complete arguments to the chosen tool."""
 
 
