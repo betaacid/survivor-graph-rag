@@ -2,12 +2,9 @@ import argparse
 import datetime
 import json
 import logging
-import sys
 import textwrap
 import time
 from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from dotenv import load_dotenv
 
@@ -17,6 +14,7 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(messag
 log = logging.getLogger(__name__)
 
 from lib.demo_questions import DEMO_QUESTIONS
+from lib.agentic_rag import query_agentic_rag
 from lib.graph_rag import query_graph_rag
 from lib.traditional_rag import query_traditional_rag
 
@@ -43,7 +41,7 @@ def main():
     log.info("Results will be persisted to %s", run_path)
 
     print_divider()
-    print("  SURVIVOR: Traditional RAG vs Graph RAG — Side-by-Side Demo")
+    print("  SURVIVOR: Traditional vs Graph vs Agentic RAG — Side-by-Side Demo")
     print_divider()
 
     questions_run = 0
@@ -61,6 +59,7 @@ def main():
 
             trad_record = {"question": question, "mode": "traditional_rag", "answer": None, "chunks": [], "time_s": None}
             graph_record = {"question": question, "mode": "graph_rag", "answer": None, "cypher": None, "graph_rows": 0, "time_s": None}
+            agentic_record = {"question": question, "mode": "agentic_rag", "answer": None, "steps": [], "time_s": None}
 
             print("\n  [Traditional RAG]")
             t0 = time.time()
@@ -101,9 +100,26 @@ def main():
                 print(f"  Error: {e}")
                 graph_record["answer"] = f"ERROR: {e}"
 
+            print(f"\n  [Agentic RAG]")
+            t0 = time.time()
+            try:
+                agentic_answer, agentic_steps = query_agentic_rag(question)
+                agentic_time = time.time() - t0
+                print(f"  Time: {agentic_time:.1f}s | Steps: {len(agentic_steps)}")
+                print_wrapped(agentic_answer)
+                log.info("Agentic RAG answer for '%s': %s", question, agentic_answer[:200])
+                agentic_record["answer"] = agentic_answer
+                agentic_record["steps"] = agentic_steps
+                agentic_record["time_s"] = round(agentic_time, 2)
+            except Exception as e:
+                log.exception("Agentic RAG failed")
+                print(f"  Error: {e}")
+                agentic_record["answer"] = f"ERROR: {e}"
+
             with open(run_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(trad_record, ensure_ascii=False) + "\n")
                 f.write(json.dumps(graph_record, ensure_ascii=False) + "\n")
+                f.write(json.dumps(agentic_record, ensure_ascii=False) + "\n")
 
             print()
 

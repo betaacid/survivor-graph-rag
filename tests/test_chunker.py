@@ -1,4 +1,4 @@
-from lib.chunker import chunk_text
+from lib.traditional_chunking import chunk_text
 
 
 def test_chunk_text_splits_with_overlap():

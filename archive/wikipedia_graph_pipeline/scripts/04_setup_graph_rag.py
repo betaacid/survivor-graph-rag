@@ -13,7 +13,7 @@ load_dotenv()
 
 from tqdm import tqdm
 
-from lib.llm import chat_strict
+from archive.wikipedia_graph_pipeline.lib.archive_llm import chat_strict
 from lib.neo4j_client import (
     add_jury_vote,
     add_vote,

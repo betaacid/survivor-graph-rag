@@ -3,20 +3,17 @@ import logging
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
 from dotenv import load_dotenv
 
 load_dotenv()
 
 from tqdm import tqdm
 
-from lib.chunker import chunk_text
 from lib.embeddings import embed_texts
 from lib.pg_client import get_chunk_count, insert_chunks, setup_schema
+from lib.traditional_chunking import chunk_text
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
-TEXT_DIR = DATA_DIR / "raw_text"
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 log = logging.getLogger(__name__)
@@ -25,7 +22,7 @@ log = logging.getLogger(__name__)
 def main():
     manifest_path = DATA_DIR / "seasons_manifest.json"
     if not manifest_path.exists():
-        log.error("Run 01_download_seasons.py first.")
+        log.error("Run 02_download_wiki.py first.")
         sys.exit(1)
 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))

@@ -12,7 +12,7 @@ load_dotenv()
 
 from tqdm import tqdm
 
-from lib.llm import chat_strict
+from archive.wikipedia_graph_pipeline.lib.archive_llm import chat_strict
 from lib.table_parser import extract_tables_from_html
 from lib.vote_parser import parse_jury_vote, parse_voting_history
 

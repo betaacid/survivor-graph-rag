@@ -13,6 +13,8 @@ def get_conn():
     if _conn is None or _conn.closed:
         url = os.getenv("DATABASE_URL")
         log.debug("Connecting to Postgres: %s", url.split("@")[-1] if url else "DATABASE_URL not set")
+        if not url:
+            raise RuntimeError("DATABASE_URL is not set")
         _conn = psycopg2.connect(url)
         _conn.autocommit = True
     return _conn

@@ -1,290 +1,11 @@
 import json
 import logging
 
-from lib.llm import chat, chat_json, chat_with_tools
-from lib.neo4j_client import run_query, search_chunks_fulltext
+from lib.agentic_tools import TOOLS, build_tool_descriptions, season_winner
 from lib.graph_rag import run_text2cypher
+from lib.llm import chat, chat_json, chat_with_tools
 
 log = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Prebuilt Cypher query tools
-# ---------------------------------------------------------------------------
-
-def season_winner(season_number: int):
-    cypher = (
-        "MATCH (ps:PlayerSeason {season_number: $sn}) "
-        "WHERE ps.exit_type = 'winner' "
-        "RETURN ps.player_name AS winner, ps.season_number AS season"
-    )
-    return cypher, run_query(cypher, {"sn": season_number})
-
-
-def player_seasons(player_name: str):
-    cypher = (
-        "MATCH (p:Player)-[:PLAYED_IN]->(ps:PlayerSeason) "
-        "WHERE toLower(p.name) CONTAINS $name "
-        "RETURN p.name AS player, ps.season_number AS season, "
-        "ps.placement AS placement, ps.exit_type AS exit_type "
-        "ORDER BY ps.season_number"
-    )
-    return cypher, run_query(cypher, {"name": player_name.lower()})
-
-
-def season_tribes(season_number: int):
-    cypher = (
-        "MATCH (t:Tribe {season_number: $sn}) "
-        "RETURN t.name AS tribe, t.phase AS phase ORDER BY t.phase"
-    )
-    return cypher, run_query(cypher, {"sn": season_number})
-
-
-def top_immunity_winners(limit: int = 10):
-    cypher = (
-        "MATCH (e:Episode)-[:IMMUNITY_WON_BY]->(ps:PlayerSeason) "
-        "RETURN ps.player_name AS player, count(e) AS wins "
-        "ORDER BY wins DESC LIMIT $limit"
-    )
-    return cypher, run_query(cypher, {"limit": limit})
-
-
-def top_reward_winners(limit: int = 10):
-    cypher = (
-        "MATCH (e:Episode)-[:REWARD_WON_BY]->(ps:PlayerSeason) "
-        "RETURN ps.player_name AS player, count(e) AS wins "
-        "ORDER BY wins DESC LIMIT $limit"
-    )
-    return cypher, run_query(cypher, {"limit": limit})
-
-
-def jury_members(season_number: int):
-    cypher = (
-        "MATCH (ps:PlayerSeason {season_number: $sn}) "
-        "WHERE ps.jury_member = true "
-        "RETURN ps.player_name AS juror, ps.placement AS placement "
-        "ORDER BY ps.placement"
-    )
-    return cypher, run_query(cypher, {"sn": season_number})
-
-
-def elimination_by_episode():
-    cypher = (
-        "MATCH (e:Episode)-[:ELIMINATED]->(ps:PlayerSeason) "
-        "RETURN e.episode_number AS episode, count(ps) AS eliminations "
-        "ORDER BY eliminations DESC LIMIT 15"
-    )
-    return cypher, run_query(cypher)
-
-
-def players_multiple_seasons(min_seasons: int = 2):
-    cypher = (
-        "MATCH (p:Player)-[:PLAYED_IN]->(ps:PlayerSeason) "
-        "WITH p, count(ps) AS seasons "
-        "WHERE seasons >= $min "
-        "RETURN p.name AS player, seasons "
-        "ORDER BY seasons DESC"
-    )
-    return cypher, run_query(cypher, {"min": min_seasons})
-
-
-def search_chunks(query: str, limit: int = 8):
-    results = search_chunks_fulltext(query, k=limit)
-    cypher = (
-        f"CALL db.index.fulltext.queryNodes('chunkTextIndex', '{query}') "
-        f"YIELD node, score "
-        f"RETURN node.chunk_id, node.text, node.section, node.doc_id, score "
-        f"ORDER BY score DESC LIMIT {limit}"
-    )
-    return cypher, results
-
-
-# ---------------------------------------------------------------------------
-# Tool registry  (OpenAI function-calling format + callable)
-# ---------------------------------------------------------------------------
-
-TOOLS = {
-    "season_winner": {
-        "function": season_winner,
-        "description": {
-            "type": "function",
-            "function": {
-                "name": "season_winner",
-                "description": "Get the winner of a specific Survivor season by season number.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "season_number": {"type": "integer", "description": "The season number (e.g. 41)"},
-                    },
-                    "required": ["season_number"],
-                },
-            },
-        },
-    },
-    "player_seasons": {
-        "function": player_seasons,
-        "description": {
-            "type": "function",
-            "function": {
-                "name": "player_seasons",
-                "description": "Get all seasons a player competed in, including placement and exit type.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "player_name": {"type": "string", "description": "The player name (or partial name)"},
-                    },
-                    "required": ["player_name"],
-                },
-            },
-        },
-    },
-    "season_tribes": {
-        "function": season_tribes,
-        "description": {
-            "type": "function",
-            "function": {
-                "name": "season_tribes",
-                "description": "Get all tribes in a specific Survivor season.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "season_number": {"type": "integer", "description": "The season number"},
-                    },
-                    "required": ["season_number"],
-                },
-            },
-        },
-    },
-    "top_immunity_winners": {
-        "function": top_immunity_winners,
-        "description": {
-            "type": "function",
-            "function": {
-                "name": "top_immunity_winners",
-                "description": "Get the players with the most individual immunity challenge wins across all seasons.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "limit": {"type": "integer", "description": "How many top players to return (default 10)"},
-                    },
-                    "required": [],
-                },
-            },
-        },
-    },
-    "top_reward_winners": {
-        "function": top_reward_winners,
-        "description": {
-            "type": "function",
-            "function": {
-                "name": "top_reward_winners",
-                "description": "Get the players with the most reward challenge wins across all seasons.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "limit": {"type": "integer", "description": "How many top players to return (default 10)"},
-                    },
-                    "required": [],
-                },
-            },
-        },
-    },
-    "jury_members": {
-        "function": jury_members,
-        "description": {
-            "type": "function",
-            "function": {
-                "name": "jury_members",
-                "description": "Get all jury members for a specific Survivor season.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "season_number": {"type": "integer", "description": "The season number"},
-                    },
-                    "required": ["season_number"],
-                },
-            },
-        },
-    },
-    "elimination_by_episode": {
-        "function": elimination_by_episode,
-        "description": {
-            "type": "function",
-            "function": {
-                "name": "elimination_by_episode",
-                "description": "Get the most common episode numbers for player eliminations across all seasons.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {},
-                    "required": [],
-                },
-            },
-        },
-    },
-    "players_multiple_seasons": {
-        "function": players_multiple_seasons,
-        "description": {
-            "type": "function",
-            "function": {
-                "name": "players_multiple_seasons",
-                "description": "Get all players who competed in a minimum number of seasons.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "min_seasons": {
-                            "type": "integer",
-                            "description": "Minimum number of seasons played (default 2)",
-                        },
-                    },
-                    "required": [],
-                },
-            },
-        },
-    },
-    "search_chunks": {
-        "function": search_chunks,
-        "description": {
-            "type": "function",
-            "function": {
-                "name": "search_chunks",
-                "description": (
-                    "Search Wikipedia text chunks stored in the graph using full-text keyword search. "
-                    "Use this for narrative questions, descriptions, controversies, strategies, "
-                    "or any question about what happened that isn't captured in structured data "
-                    "(e.g. 'What happened at the merge?', 'Tell me about the controversies in Season 39')."
-                ),
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "query": {"type": "string", "description": "Search keywords or phrase"},
-                        "limit": {"type": "integer", "description": "Max chunks to return (default 8)"},
-                    },
-                    "required": ["query"],
-                },
-            },
-        },
-    },
-    "text2cypher": {
-        "function": None,
-        "description": {
-            "type": "function",
-            "function": {
-                "name": "text2cypher",
-                "description": (
-                    "Generate and run a custom Cypher query against the Survivor graph database. "
-                    "Use this as a fallback when none of the other specialized tools fit the question."
-                ),
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "question": {"type": "string", "description": "The question to answer via Cypher"},
-                    },
-                    "required": ["question"],
-                },
-            },
-        },
-    },
-}
 
 
 # ---------------------------------------------------------------------------
@@ -323,10 +44,6 @@ that isn't captured in structured graph data (e.g. "What happened at the merge?"
 Make sure to pass the correct and complete arguments to the chosen tool."""
 
 
-def _build_tool_descriptions():
-    return [t["description"] for t in TOOLS.values()]
-
-
 def _handle_tool_call(tool_call):
     name = tool_call.function.name
     args = json.loads(tool_call.function.arguments)
@@ -349,7 +66,7 @@ def route_question(question: str):
         {"role": "system", "content": _ROUTER_PROMPT},
         {"role": "user", "content": f"The user question to find a tool to answer: '{question}'"},
     ]
-    response_msg = chat_with_tools(messages, _build_tool_descriptions())
+    response_msg = chat_with_tools(messages, build_tool_descriptions())
 
     if not response_msg.tool_calls:
         log.warning("Router returned no tool calls, falling back to text2cypher")
@@ -370,6 +87,8 @@ The user will provide an original question and retrieved data.
 If the data is sufficient to answer the original question, return an empty list.
 If information is missing, return a short list of follow-up questions to fill the gap.
 All follow-up questions must be complete, atomic, and specific.
+Only ask follow-up questions that can be answered from the existing Survivor graph and chunk data.
+Do not ask for user clarification, alternate interpretations, timeframes, platforms, or external sources.
 Return JSON: {"questions": ["question1", ...]}"""
 
 
@@ -421,7 +140,7 @@ def query_agentic_rag(question: str):
         tool_name, tool_args, cypher, rows = route_question(rewritten)
     except Exception as e:
         steps.append({"stage": "router", "error": str(e)})
-        return f"Agentic RAG failed during routing: {e}", steps
+        raise RuntimeError(f"Agentic RAG failed during routing: {e}") from e
 
     steps.append({
         "stage": "router",
@@ -435,19 +154,20 @@ def query_agentic_rag(question: str):
     steps.append({"stage": "critic", "follow_ups": follow_ups})
 
     if follow_ups:
-        combined = " ".join(follow_ups)
-        try:
-            fu_tool, fu_args, fu_cypher, fu_rows = route_question(combined)
-            rows = rows + fu_rows
-            steps.append({
-                "stage": "critic_retry",
-                "tool": fu_tool,
-                "args": fu_args,
-                "cypher": fu_cypher,
-                "rows_returned": len(fu_rows),
-            })
-        except Exception as e:
-            steps.append({"stage": "critic_retry", "error": str(e)})
+        for follow_up in follow_ups:
+            try:
+                fu_tool, fu_args, fu_cypher, fu_rows = route_question(follow_up)
+                rows.extend(fu_rows)
+                steps.append({
+                    "stage": "critic_retry",
+                    "question": follow_up,
+                    "tool": fu_tool,
+                    "args": fu_args,
+                    "cypher": fu_cypher,
+                    "rows_returned": len(fu_rows),
+                })
+            except Exception as e:
+                steps.append({"stage": "critic_retry", "question": follow_up, "error": str(e)})
 
     results_str = _format_rows(rows)
     answer = chat(

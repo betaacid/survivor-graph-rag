@@ -1,6 +1,3 @@
-import json
-from pathlib import Path
-
 import lib.wiki_fetcher as wf
 
 
@@ -19,7 +16,19 @@ class DummyResponse:
 
 
 def test_html_to_plain_text_removes_tables_and_navbox():
-    html = (Path(__file__).parent / "fixtures" / "sample_season.html").read_text(encoding="utf-8")
+    html = """
+    <html><body>
+    <h1>Survivor: The Australian Outback</h1>
+    <div class="navbox">ignore this nav</div>
+    <table class="wikitable">
+    <caption>Challenge winners and eliminations by episode</caption>
+    <tr><th>No.</th><th>Title</th><th>Reward</th><th>Immunity</th><th>Eliminated</th></tr>
+    <tr><td>1</td><td>Stranded</td><td>Ogakor</td><td>Kucha</td><td>Debb</td></tr>
+    <tr><td>2</td><td>Suspicion</td><td>Ogakor</td><td>Kucha</td><td>Kel</td></tr>
+    </table>
+    <p>The season was filmed in Queensland.</p>
+    </body></html>
+    """
     text = wf.html_to_plain_text(html)
     assert "Challenge winners" not in text
     assert "ignore this nav" not in text

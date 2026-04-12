@@ -20,7 +20,7 @@ DEMO_QUESTIONS = [
         ],
     },
     {
-        "category": "Graph RAG Needs Custom Work",
+        "category": "Graph RAG Edge Cases",
         "questions": [
             "Across all seasons, who has the highest number of individual immunity challenge wins?",
             "What is the most common episode number for eliminations across all seasons?",

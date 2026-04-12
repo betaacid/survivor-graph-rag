@@ -1,33 +1,21 @@
 import argparse
 import json
 import logging
-import sys
 import urllib.request
 from collections import defaultdict
-from pathlib import Path
-
-from tqdm import tqdm
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from dotenv import load_dotenv
+from tqdm import tqdm
 
-load_dotenv()
-
-SURVIVOR_DATA_BASE = "https://raw.githubusercontent.com/doehm/survivoR/master/dev/json"
-
-from lib.neo4j_client import (
+from lib.neo4j_client import clear_graph, get_node_counts, run_query, setup_constraints
+from lib.neo4j_ingest import (
     add_jury_vote,
     add_vote,
-    clear_graph,
-    get_node_counts,
     link_episode_eliminated,
     link_episode_immunity,
     link_episode_reward,
     link_player_tribe,
     link_tribal_attendee,
-    run_query,
-    setup_constraints,
     upsert_episode,
     upsert_player,
     upsert_player_season,
@@ -36,10 +24,13 @@ from lib.neo4j_client import (
     upsert_tribe,
 )
 
+load_dotenv()
+
+SURVIVOR_DATA_BASE = "https://raw.githubusercontent.com/doehm/survivoR/master/dev/json"
+MAX_SEASON = 49
+
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 log = logging.getLogger(__name__)
-
-MAX_SEASON = 49
 
 
 def load_json(filename):
@@ -91,12 +82,19 @@ def ingest_players(seasons):
         elif r.get("finalist"):
             exit_type = "runner_up"
 
+        placement = r.get("place")
+        if placement is not None:
+            try:
+                placement = int(placement)
+            except (ValueError, TypeError):
+                placement = None
+
         props = {
             "player_name": full_name,
             "season_number": season,
             "age": r.get("age"),
             "hometown": hometown,
-            "placement": str(r["place"]) if r.get("place") is not None else None,
+            "placement": placement,
             "day_out": r.get("day"),
             "exit_type": exit_type,
             "jury_member": bool(r.get("jury", False)),
@@ -190,8 +188,7 @@ def ingest_votes(seasons, name_lookup):
         tribal_attendees[(season, episode)].add(voter_full)
         vote_count += 1
 
-    log.info("Ingested %d votes (%d skipped, no target), %d tribal councils",
-             vote_count, skipped, len(tribal_attendees))
+    log.info("Ingested %d votes (%d skipped, no target), %d tribal councils", vote_count, skipped, len(tribal_attendees))
 
     log.info("Creating tribal council nodes and attendee links...")
     for (season, episode), attendees in tqdm(tribal_attendees.items(), desc="Tribals"):

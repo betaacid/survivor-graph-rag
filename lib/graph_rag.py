@@ -1,7 +1,8 @@
 import logging
 
 from lib.llm import chat
-from lib.neo4j_client import get_graph_schema, run_query
+from lib.neo4j_client import run_query
+from lib.neo4j_schema import get_graph_schema
 
 log = logging.getLogger(__name__)
 
@@ -52,10 +53,6 @@ CYPHER_EXAMPLES = [
         "MATCH (ps:PlayerSeason {season_number: 41})-[:ATTENDED_TRIBAL]->(tc:TribalCouncil) RETURN ps.player_name, count(tc) AS tribals_attended ORDER BY tribals_attended DESC LIMIT 10",
     ),
     (
-        "Which tribe went to tribal council in episode 3 of Survivor 41?",
-        "MATCH (e:Episode {season_number: 41, episode_number: 3})-[:TRIBAL_COUNCIL_FOR]->(t:Tribe) RETURN t.name",
-    ),
-    (
         "What Wikipedia text mentions Parvati Shallow?",
         "MATCH (p:Player {name: 'Parvati Shallow'})<-[:MENTIONS]-(c:Chunk) RETURN c.text, c.section, c.doc_id LIMIT 5",
     ),
@@ -86,7 +83,6 @@ TERMINOLOGY_MAP = """Terminology mappings:
 - "returning player" / "played multiple times" -> Player with multiple [:PLAYED_IN] relationships
 - "voted for" (during tribal council) -> [:CAST_VOTE] relationship between PlayerSeason nodes (has episode_number property)
 - "tribal council attendance" / "attended tribal" / "went to tribal" -> [:ATTENDED_TRIBAL] from PlayerSeason to TribalCouncil node
-- "which tribe went to tribal" -> (Episode)-[:TRIBAL_COUNCIL_FOR]->(Tribe)
 - "text about" / "Wikipedia says" / "narrative" / "description of" / "what happened" -> use Chunk nodes via MENTIONS traversal or fulltext search
 - fulltext chunk search -> CALL db.index.fulltext.queryNodes('chunkTextIndex', $query) YIELD node, score
 - "mentions" / "talked about" -> (:Chunk)-[:MENTIONS]->(:Player) or (:Chunk)-[:MENTIONS]->(:Season) traversal"""
@@ -118,7 +114,6 @@ Relationship types and properties:
   ELIMINATED
   IMMUNITY_WON_BY
   REWARD_WON_BY
-  TRIBAL_COUNCIL_FOR
   CAST_VOTE {episode_number: INTEGER}
   JURY_VOTE_FOR
   HAS_CHUNK
@@ -136,7 +131,6 @@ The relationships:
   (:Episode)-[:ELIMINATED]->(:PlayerSeason)
   (:Episode)-[:IMMUNITY_WON_BY]->(:PlayerSeason)
   (:Episode)-[:REWARD_WON_BY]->(:PlayerSeason)
-  (:Episode)-[:TRIBAL_COUNCIL_FOR]->(:Tribe)
   (:Document)-[:HAS_CHUNK]->(:Chunk)
   (:Chunk)-[:MENTIONS]->(:Player)
   (:Chunk)-[:MENTIONS]->(:Season)"""
@@ -185,21 +179,26 @@ def run_text2cypher(question):
 
     last_error = None
     graph_results = None
+    empty_retry_used = False
     for attempt in range(1 + CYPHER_MAX_RETRIES):
         try:
             graph_results = run_query(cypher)
             if graph_results:
                 break
             log.warning("Cypher attempt %d returned 0 rows: %s", attempt + 1, cypher)
-            if attempt < CYPHER_MAX_RETRIES:
+            if attempt < CYPHER_MAX_RETRIES and not empty_retry_used:
+                empty_retry_used = True
                 empty_prompt = (
                     f"The following Cypher query returned no results:\n{cypher}\n\n"
                     f"Original question: {question}\n\n"
                     f"The query may be using property values that don't exist in the data "
-                    f"or filtering too aggressively. Relax filters or try a different approach. "
+                    f"or filtering too aggressively. It is also possible that the correct answer is genuinely empty. "
+                    f"Relax filters or try a different approach if needed. "
                     f"Return ONLY the corrected Cypher, nothing else."
                 )
                 cypher = clean_cypher(chat(system_prompt, empty_prompt))
+            else:
+                break
         except Exception as e:
             last_error = e
             log.warning("Cypher attempt %d failed: %s\nQuery: %s", attempt + 1, e, cypher)
@@ -221,10 +220,7 @@ def run_text2cypher(question):
 
 
 def query_graph_rag(question):
-    try:
-        cypher, graph_results = run_text2cypher(question)
-    except RuntimeError as e:
-        return str(e), "", []
+    cypher, graph_results = run_text2cypher(question)
 
     results_str = ""
     if graph_results:

@@ -14,6 +14,8 @@ Be specific and cite which season/episode when relevant."""
 def query_traditional_rag(question):
     query_emb = embed_query(question)
     results = search_similar(query_emb, top_k=6)
+    if not results:
+        return "No retrieved context was found in pgvector. Run the text pipeline first.", []
 
     context_parts = []
     for r in results:

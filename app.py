@@ -11,7 +11,8 @@ load_dotenv()
 from lib.agentic_rag import query_agentic_rag
 from lib.demo_questions import DEMO_QUESTIONS
 from lib.graph_rag import query_graph_rag
-from lib.neo4j_client import fetch_subgraph_for_results, get_node_counts
+from lib.neo4j_client import get_node_counts
+from lib.neo4j_viz import fetch_subgraph_for_results
 from lib.traditional_rag import query_traditional_rag
 
 LABEL_COLORS = {
@@ -20,6 +21,7 @@ LABEL_COLORS = {
     "PlayerSeason": "#2ecc71",
     "Episode": "#f39c12",
     "Tribe": "#9b59b6",
+    "TribalCouncil": "#34495e",
     "Document": "#1abc9c",
     "Chunk": "#7f8c8d",
 }
@@ -30,6 +32,7 @@ NODE_DISPLAY_KEY = {
     "PlayerSeason": "player_name",
     "Episode": "episode_number",
     "Tribe": "name",
+    "TribalCouncil": "episode_number",
     "Document": "title",
     "Chunk": "chunk_id",
 }
@@ -183,7 +186,7 @@ if run and question.strip():
             except Exception as e:
                 st.session_state.results["agentic_error"] = str(e)
 
-if st.session_state.results and st.session_state.results.get("question") == question:
+if st.session_state.results and st.session_state.results.get("question") == question and st.session_state.results.get("mode") == mode:
     r = st.session_state.results
     run_trad = r["mode"] in ("All", "Traditional RAG")
     run_graph = r["mode"] in ("All", "Graph RAG")
@@ -299,3 +302,6 @@ if st.session_state.results and st.session_state.results.get("question") == ques
                                 if step.get("cypher"):
                                     st.code(step["cypher"], language="cypher")
                                 st.caption(f"{step.get('rows_returned', 0)} rows returned")
+                            st.divider()
+elif st.session_state.results and st.session_state.results.get("question") == question and st.session_state.results.get("mode") != mode:
+    st.info("Mode changed since the last run. Click Run to refresh the results.")
