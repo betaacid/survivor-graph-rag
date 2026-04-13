@@ -70,6 +70,34 @@ def test_run_text2cypher_retries_empty_once(monkeypatch):
     assert len(queries) == 2
 
 
+def test_cypher_examples_include_cross_season_aggregation():
+    found_aggregation = False
+    found_multi_winner = False
+    found_b2b = False
+    for question, cypher in graph_rag.CYPHER_EXAMPLES:
+        if "across all seasons" in question.lower() and "player_name" in cypher:
+            found_aggregation = True
+        if "won Survivor more than once" in question:
+            found_multi_winner = True
+        if "back-to-back" in question:
+            found_b2b = True
+    assert found_aggregation, "No cross-season aggregation example"
+    assert found_multi_winner, "No multi-time winner example"
+    assert found_b2b, "No back-to-back winner example"
+
+
+def test_terminology_map_covers_ambiguous_winner_patterns():
+    assert "two-time winner" in graph_rag.TERMINOLOGY_MAP
+    assert "back to back" in graph_rag.TERMINOLOGY_MAP
+    assert "across all seasons" in graph_rag.TERMINOLOGY_MAP
+
+
+def test_query_guidelines_mention_limit_and_aggregation():
+    prompt = graph_rag.build_cypher_system_prompt(schema="test schema")
+    assert "LIMIT 10" in prompt
+    assert "aggregate by player_name" in prompt
+
+
 def test_query_graph_rag_raises_on_text2cypher_failure(monkeypatch):
     def fake_run_text2cypher(question):
         raise RuntimeError("failed")

@@ -64,6 +64,22 @@ CYPHER_EXAMPLES = [
         "What do the Wikipedia articles say about hidden immunity idols in Survivor 28?",
         "MATCH (c:Chunk)-[:MENTIONS]->(s:Season {number: 28}) WHERE toLower(c.text) CONTAINS 'idol' RETURN c.text, c.section LIMIT 5",
     ),
+    (
+        "Which player attended the most tribal councils across all seasons?",
+        "MATCH (ps:PlayerSeason)-[:ATTENDED_TRIBAL]->(tc:TribalCouncil) WITH ps.player_name AS player, count(tc) AS tribals_attended ORDER BY tribals_attended DESC RETURN player, tribals_attended LIMIT 10",
+    ),
+    (
+        "Which player has the most total immunity wins across all their seasons?",
+        "MATCH (e:Episode)-[:IMMUNITY_WON_BY]->(ps:PlayerSeason) WITH ps.player_name AS player, count(e) AS total_wins ORDER BY total_wins DESC RETURN player, total_wins LIMIT 10",
+    ),
+    (
+        "Which players have won Survivor more than once?",
+        "MATCH (ps:PlayerSeason) WHERE ps.exit_type = 'winner' WITH ps.player_name AS player, collect(ps.season_number) AS winning_seasons, count(*) AS wins WHERE wins > 1 RETURN player, winning_seasons, wins ORDER BY wins DESC",
+    ),
+    (
+        "Which players won on their first two appearances (back-to-back wins by appearance order)?",
+        "MATCH (p:Player)-[:PLAYED_IN]->(ps:PlayerSeason) WITH p.name AS player, ps ORDER BY ps.season_number WITH player, collect({season: ps.season_number, exit: ps.exit_type}) AS appearances WHERE size(appearances) >= 2 AND appearances[0].exit = 'winner' AND appearances[1].exit = 'winner' RETURN player, appearances[0].season AS first_win, appearances[1].season AS second_win",
+    ),
 ]
 
 TERMINOLOGY_MAP = """Terminology mappings:
@@ -81,6 +97,9 @@ TERMINOLOGY_MAP = """Terminology mappings:
 - "medevac" / "medical evacuation" -> exit_type = 'medevac'
 - "quit" -> exit_type = 'quit'
 - "returning player" / "played multiple times" -> Player with multiple [:PLAYED_IN] relationships
+- "two-time winner" / "won multiple seasons" / "won twice" -> multiple PlayerSeason nodes for the same player_name where exit_type = 'winner'; group by player_name and count
+- "back to back" / "consecutive" wins -> ambiguous; could mean consecutive season numbers (season_number differ by 1) OR consecutive appearances by the same player (order PlayerSeasons by season_number and check the first two); prefer the appearance-order interpretation unless the question explicitly says "consecutive season numbers"
+- "across all seasons" / "career total" / "all-time" -> aggregate a stat across ALL PlayerSeason nodes for a player by grouping on player_name, not per individual PlayerSeason
 - "voted for" (during tribal council) -> [:CAST_VOTE] relationship between PlayerSeason nodes (has episode_number property)
 - "tribal council attendance" / "attended tribal" / "went to tribal" -> [:ATTENDED_TRIBAL] from PlayerSeason to TribalCouncil node
 - "text about" / "Wikipedia says" / "narrative" / "description of" / "what happened" -> use Chunk nodes via MENTIONS traversal or fulltext search
@@ -156,6 +175,8 @@ def build_cypher_system_prompt(schema=None):
         examples_block.rstrip(),
         "Query guidelines:\n"
         "- Keep results to a reasonable size (use LIMIT if the result set could be large).\n"
+        "- For ranking queries (most, top, best), always return a top-N list (LIMIT 10) so the answer has context, not LIMIT 1.\n"
+        "- When the question says 'across all seasons' or 'career total', aggregate by player_name across all their PlayerSeason nodes, not per individual PlayerSeason.\n"
         "- Use OPTIONAL MATCH when a path might not exist for all nodes.\n"
         "- Prefer traversing relationships over filtering on properties when the schema models something as a relationship.",
         FORMAT_INSTRUCTIONS,

@@ -79,6 +79,38 @@ def players_multiple_seasons(min_seasons: int = 2):
     return cypher, run_query(cypher, {"min": min_seasons})
 
 
+def multi_time_winners():
+    cypher = (
+        "MATCH (ps:PlayerSeason) WHERE ps.exit_type = 'winner' "
+        "WITH ps.player_name AS player, "
+        "collect(ps.season_number) AS winning_seasons, count(*) AS wins "
+        "WHERE wins > 1 "
+        "RETURN player, winning_seasons, wins ORDER BY wins DESC"
+    )
+    return cypher, run_query(cypher)
+
+
+def back_to_back_winners():
+    cypher = (
+        "MATCH (p:Player)-[:PLAYED_IN]->(ps:PlayerSeason) "
+        "WITH p.name AS player, ps ORDER BY ps.season_number "
+        "WITH player, collect({season: ps.season_number, exit: ps.exit_type}) AS apps "
+        "WHERE size(apps) >= 2 AND apps[0].exit = 'winner' AND apps[1].exit = 'winner' "
+        "RETURN player, apps[0].season AS first_win, apps[1].season AS second_win"
+    )
+    return cypher, run_query(cypher)
+
+
+def top_tribal_attendance(limit: int = 10):
+    cypher = (
+        "MATCH (ps:PlayerSeason)-[:ATTENDED_TRIBAL]->(tc:TribalCouncil) "
+        "WITH ps.player_name AS player, count(tc) AS tribals_attended "
+        "ORDER BY tribals_attended DESC "
+        "RETURN player, tribals_attended LIMIT $limit"
+    )
+    return cypher, run_query(cypher, {"limit": limit})
+
+
 def search_chunks(query: str, limit: int = 8):
     season_match = re.search(r"\b(?:survivor|season)\s+(\d{1,2})\b", query, re.IGNORECASE)
     if season_match:
@@ -239,6 +271,56 @@ TOOLS = {
                             "type": "integer",
                             "description": "Minimum number of seasons played (default 2)",
                         },
+                    },
+                    "required": [],
+                },
+            },
+        },
+    },
+    "multi_time_winners": {
+        "function": multi_time_winners,
+        "description": {
+            "type": "function",
+            "function": {
+                "name": "multi_time_winners",
+                "description": "Get all players who have won Survivor more than once, with the seasons they won.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                },
+            },
+        },
+    },
+    "back_to_back_winners": {
+        "function": back_to_back_winners,
+        "description": {
+            "type": "function",
+            "function": {
+                "name": "back_to_back_winners",
+                "description": (
+                    "Get players who won on consecutive appearances (their first two times playing both resulted in wins). "
+                    "Use for questions about 'back to back' winners or players who won every time they played."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                },
+            },
+        },
+    },
+    "top_tribal_attendance": {
+        "function": top_tribal_attendance,
+        "description": {
+            "type": "function",
+            "function": {
+                "name": "top_tribal_attendance",
+                "description": "Get players with the most total tribal council attendance across all seasons.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "limit": {"type": "integer", "description": "How many top players to return (default 10)"},
                     },
                     "required": [],
                 },

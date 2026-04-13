@@ -13,11 +13,18 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _REWRITE_PROMPT = """\
-You are an expert at rewriting user questions to be more atomic, specific, and \
-easier to route to the right database query.
+You are an expert at rewriting user questions about the TV show Survivor to be \
+more atomic, specific, and easier to route to the right database query.
 Rewrite the question so that it is self-contained and precise.
 Only rephrase; do not ask for more information than the original question.
 If the question is already clear and specific, keep it unchanged.
+When phrasing is ambiguous (e.g. "back to back" could mean consecutive season \
+numbers OR consecutive appearances by the same player), preserve the most common \
+fan interpretation rather than picking a narrow literal reading. For Survivor, \
+"back to back" usually means a player who won on consecutive appearances, not \
+that the season numbers differ by exactly one.
+When the question asks for a stat "across all seasons" or "all-time", make sure \
+the rewrite keeps the cross-season aggregation intent clear.
 Return JSON: {"question": "the rewritten question"}"""
 
 
@@ -82,13 +89,18 @@ def route_question(question: str):
 # ---------------------------------------------------------------------------
 
 _CRITIC_PROMPT = """\
-You are an expert at evaluating whether a question has been fully answered.
+You are an expert at evaluating whether a Survivor TV show question has been \
+fully answered.
 The user will provide an original question and retrieved data.
 If the data is sufficient to answer the original question, return an empty list.
 If information is missing, return a short list of follow-up questions to fill the gap.
 All follow-up questions must be complete, atomic, and specific.
-Only ask follow-up questions that can be answered from the existing Survivor graph and chunk data.
-Do not ask for user clarification, alternate interpretations, timeframes, platforms, or external sources.
+Only ask follow-up questions that can be answered from the existing Survivor graph \
+and chunk data.
+If the retrieved data is empty and the question is ambiguous (e.g. "back to back" \
+could mean consecutive season numbers or consecutive appearances), generate a \
+follow-up that tries the alternative interpretation using graph-answerable terms.
+Do not ask for user clarification, timeframes, platforms, or external sources.
 Return JSON: {"questions": ["question1", ...]}"""
 
 

@@ -72,6 +72,64 @@ def test_query_agentic_rag_full_flow(monkeypatch):
     assert steps[3]["question"] == "Who were the jury members in season 45?"
 
 
+def test_handle_tool_call_dispatches_multi_time_winners(monkeypatch):
+    monkeypatch.setattr(
+        agentic_tools, "multi_time_winners",
+        lambda: ("MATCH multi", [{"player": "Sandra Diaz-Twine", "winning_seasons": [7, 20], "wins": 2}]),
+    )
+    original = agentic_rag.TOOLS["multi_time_winners"]["function"]
+    agentic_rag.TOOLS["multi_time_winners"]["function"] = agentic_tools.multi_time_winners
+
+    try:
+        name, args, cypher, rows = agentic_rag._handle_tool_call(
+            make_tool_call("multi_time_winners", "{}"),
+        )
+    finally:
+        agentic_rag.TOOLS["multi_time_winners"]["function"] = original
+
+    assert name == "multi_time_winners"
+    assert rows[0]["player"] == "Sandra Diaz-Twine"
+
+
+def test_handle_tool_call_dispatches_back_to_back_winners(monkeypatch):
+    monkeypatch.setattr(
+        agentic_tools, "back_to_back_winners",
+        lambda: ("MATCH b2b", [{"player": "Sandra Diaz-Twine", "first_win": 7, "second_win": 20}]),
+    )
+    original = agentic_rag.TOOLS["back_to_back_winners"]["function"]
+    agentic_rag.TOOLS["back_to_back_winners"]["function"] = agentic_tools.back_to_back_winners
+
+    try:
+        name, args, cypher, rows = agentic_rag._handle_tool_call(
+            make_tool_call("back_to_back_winners", "{}"),
+        )
+    finally:
+        agentic_rag.TOOLS["back_to_back_winners"]["function"] = original
+
+    assert name == "back_to_back_winners"
+    assert rows[0]["first_win"] == 7
+    assert rows[0]["second_win"] == 20
+
+
+def test_handle_tool_call_dispatches_top_tribal_attendance(monkeypatch):
+    monkeypatch.setattr(
+        agentic_tools, "top_tribal_attendance",
+        lambda limit=10: ("MATCH tribal", [{"player": "Someone", "tribals_attended": 50}]),
+    )
+    original = agentic_rag.TOOLS["top_tribal_attendance"]["function"]
+    agentic_rag.TOOLS["top_tribal_attendance"]["function"] = agentic_tools.top_tribal_attendance
+
+    try:
+        name, args, cypher, rows = agentic_rag._handle_tool_call(
+            make_tool_call("top_tribal_attendance", '{"limit": 10}'),
+        )
+    finally:
+        agentic_rag.TOOLS["top_tribal_attendance"]["function"] = original
+
+    assert name == "top_tribal_attendance"
+    assert rows[0]["tribals_attended"] == 50
+
+
 def test_search_chunks_anchors_numeric_season_queries(monkeypatch):
     captured = {}
 
@@ -88,3 +146,49 @@ def test_search_chunks_anchors_numeric_season_queries(monkeypatch):
     assert captured["params"]["season_number"] == 48
     assert captured["params"]["doc_id"] == "wikipedia:Survivor_48"
     assert rows == [{"chunk_id": "wikipedia:Survivor_48#0001"}]
+
+
+def test_multi_time_winners_cypher_groups_by_player(monkeypatch):
+    captured = {}
+
+    def fake_run_query(cypher, params=None):
+        captured["cypher"] = cypher
+        return [{"player": "Sandra Diaz-Twine", "winning_seasons": [7, 20], "wins": 2}]
+
+    monkeypatch.setattr(agentic_tools, "run_query", fake_run_query)
+    cypher, rows = agentic_tools.multi_time_winners()
+
+    assert "player_name AS player" in cypher
+    assert "wins > 1" in cypher
+    assert rows[0]["wins"] == 2
+
+
+def test_back_to_back_winners_checks_appearance_order(monkeypatch):
+    captured = {}
+
+    def fake_run_query(cypher, params=None):
+        captured["cypher"] = cypher
+        return [{"player": "Sandra Diaz-Twine", "first_win": 7, "second_win": 20}]
+
+    monkeypatch.setattr(agentic_tools, "run_query", fake_run_query)
+    cypher, rows = agentic_tools.back_to_back_winners()
+
+    assert "apps[0].exit = 'winner'" in cypher
+    assert "apps[1].exit = 'winner'" in cypher
+    assert "ORDER BY ps.season_number" in cypher
+
+
+def test_top_tribal_attendance_aggregates_across_seasons(monkeypatch):
+    captured = {}
+
+    def fake_run_query(cypher, params=None):
+        captured["cypher"] = cypher
+        captured["params"] = params
+        return [{"player": "Someone", "tribals_attended": 50}]
+
+    monkeypatch.setattr(agentic_tools, "run_query", fake_run_query)
+    cypher, rows = agentic_tools.top_tribal_attendance(limit=5)
+
+    assert "player_name AS player" in cypher
+    assert "count(tc) AS tribals_attended" in cypher
+    assert captured["params"]["limit"] == 5
