@@ -69,7 +69,9 @@ This works well for narrative questions. "Why was Mike Skupin medevaced?" gets a
 
 But ask "How many total tribal councils have there been across all 49 seasons?" and it flails. There's no single paragraph with that number. The answer requires counting structured records, and traditional RAG has no way to count anything.
 
-![Traditional RAG screenshot](media/rag.png)
+<p align="center">
+  <img src="./media/rag-card.png" alt="Traditional RAG screenshot" width="760">
+</p>
 
 ### Graph RAG
 
@@ -98,7 +100,9 @@ Now "How many tribal councils total?" becomes `MATCH (tc:TribalCouncil) RETURN c
 
 The catch: when the LLM writes bad Cypher, things break silently. It might use a property name that doesn't exist, or filter too aggressively and return zero rows. We added retry logic to repair broken queries, but compound questions that need multiple aggregations still trip it up.
 
-![Graph RAG screenshot](media/graph-rag.png)
+<p align="center">
+  <img src="./media/graph-rag-card.png" alt="Graph RAG screenshot" width="760">
+</p>
 
 ### Agentic graph RAG
 
@@ -124,7 +128,9 @@ Before any of the routing happens, the agent also rewrites the incoming question
 
 The feedback loop is the last piece. After the first retrieval, a critic checks whether the result actually answers the original question. Ask "Who won Survivor 45, and who were the jury members?" and the first pass retrieves the winner. The critic notices the jury data is missing and fires a second query. Two lookups, merged into one answer. Without the loop, you get half an answer and no way to know it's incomplete.
 
-![Agentic graph RAG screenshot](media/agentic-graph-rag.png)
+<p align="center">
+  <img src="./media/agentic-graph-rag-card.png" alt="Agentic graph RAG screenshot" width="760">
+</p>
 
 ## When each approach wins
 
