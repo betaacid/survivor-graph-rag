@@ -32,22 +32,36 @@ flowchart LR
 
 ## quickstart
 
-You need [uv](https://docs.astral.sh/uv/), Docker, Python 3.11+, and an OpenAI API key.
+You need [uv](https://docs.astral.sh/uv/), Docker Desktop, Python 3.11+, and an OpenAI API key.
 
 ```bash
 git clone <repo-url> && cd survivorgraph
 uv sync
-cp .env.example .env
+make env
 ```
 
-Set `OPENAI_API_KEY` in `.env`, then run:
+Open `.env`, set `OPENAI_API_KEY`, then run:
 
 ```bash
 make setup
 make app
 ```
 
+`make env` creates `.env` with the local Neo4j and Postgres settings used by `docker compose`.
+
+`make setup` starts Neo4j and Postgres, then loads the graph and vector data.
+
+`make app` makes sure those services are running before it launches Streamlit.
+
 The app opens at [http://localhost:8501](http://localhost:8501).
+
+If the data is already loaded and you just want the UI, run:
+
+```bash
+make app
+```
+
+If `OPENAI_API_KEY` is missing, the app can still open, but question answering and the `setup`, `ingest`, and `demo` targets will fail.
 
 If you want to rerun the full import from a blank database, run `make reset` before `make setup`.
 
