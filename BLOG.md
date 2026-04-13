@@ -69,6 +69,8 @@ This works well for narrative questions. "Why was Mike Skupin medevaced?" gets a
 
 But ask "How many total tribal councils have there been across all 49 seasons?" and it flails. There's no single paragraph with that number. The answer requires counting structured records, and traditional RAG has no way to count anything.
 
+![Traditional RAG screenshot](media/rag.png)
+
 ### Graph RAG
 
 Instead of just searching text, we ask the LLM to write the database query. We give it the graph schema, some examples, and the user's question. It writes Cypher (a graph database query language), we run it, and we include the results in the LLM call.
@@ -96,6 +98,8 @@ Now "How many tribal councils total?" becomes `MATCH (tc:TribalCouncil) RETURN c
 
 The catch: when the LLM writes bad Cypher, things break silently. It might use a property name that doesn't exist, or filter too aggressively and return zero rows. We added retry logic to repair broken queries, but compound questions that need multiple aggregations still trip it up.
 
+![Graph RAG screenshot](media/graph-rag.png)
+
 ### Agentic graph RAG
 
 Plain graph RAG generates one Cypher query and hopes it's right. The agentic version treats the whole thing as an agent loop: the system has a goal (answer this question), a set of tools it can pick from, and a feedback step where it evaluates its own output and decides whether to keep going.
@@ -119,6 +123,8 @@ You start with your best guesses about what people will ask, then add or adjust 
 Before any of the routing happens, the agent also rewrites the incoming question to be more specific. "Tell me about Ozzy" becomes "What seasons did Oscar 'Ozzy' Lusth compete in and how did he place?" That makes the router's job easier and improves the quality of the downstream query.
 
 The feedback loop is the last piece. After the first retrieval, a critic checks whether the result actually answers the original question. Ask "Who won Survivor 45, and who were the jury members?" and the first pass retrieves the winner. The critic notices the jury data is missing and fires a second query. Two lookups, merged into one answer. Without the loop, you get half an answer and no way to know it's incomplete.
+
+![Agentic graph RAG screenshot](media/agentic-graph-rag.png)
 
 ## When each approach wins
 
