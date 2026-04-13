@@ -140,19 +140,9 @@ Agentic graph RAG reduces that fragility by routing common patterns to tested qu
 
 ## The ingestion problem
 
-In our case, getting the data into the graph took longer than building any of the retrieval logic.
+In our case, getting the data into the graph took longer than building any of the retrieval logic. We first tried extracting structured data from Wikipedia HTML tables using an LLM to classify and normalize them. It worked for simple tables but fell apart on voting grids, inconsistent column names across 49 articles, and name mismatches ("Ozzy" in one table, "Oscar 'Ozzy' Lusth" in another).
 
-We started by trying to build the entire knowledge graph from Wikipedia. Download all 49 season pages, extract the HTML tables, use an LLM to classify and normalize them, load everything into Neo4j.
-
-It kind of worked. The LLM handled simple tables fine, like contestant lists and episode summaries. But voting history and jury vote grids have wild layouts with colspan and rowspan, and the 49 articles were written by different editors over 20 years. Column names vary ("Finish" vs "Placement" vs "Result"), cells are full of footnote markers, and the normalization step would quietly drop players or misattribute votes.
-
-We ended up writing custom HTML parsers for the worst cases and still missed edge cases. Name matching across tables was its own headache, "Ozzy" in one table, "Oscar 'Ozzy' Lusth" in another.
-
-All solvable with enough time. But we went with the [survivoR R package](https://github.com/doehm/survivoR) dataset instead. Pre-cleaned data with consistent identifiers across all 49 seasons. The graph import runs in about 45 seconds with no LLM calls.
-
-The Wikipedia articles still matter, though. They're the text source for traditional RAG and for chunk nodes in the graph. We just stopped trying to extract structured data from messy HTML tables when cleaner structured data already existed.
-
-The data pipeline is usually harder than the retrieval logic. If structured data already exists somewhere, use it. Don't ask an LLM to reconstruct structure from HTML soup unless you really have to.
+We switched to the [survivoR R package](https://github.com/doehm/survivoR), a pre-cleaned dataset with consistent identifiers. The graph import runs in about 45 seconds with no LLM calls. Wikipedia articles still provide the text for traditional RAG and chunk search -- we just stopped trying to pull structured data out of them.
 
 ## When your users' questions outgrow text search
 
@@ -170,4 +160,4 @@ In every case, the answer isn't hiding in a paragraph. It lives in the connectio
 
 The full codebase is open source. One `make setup` to spin up Neo4j and Postgres, load the graph, and build the text indexes. One `make app` to launch the Streamlit UI where you can ask the same question in all three modes and compare the answers side by side.
 
-[survivorgraph on GitHub](https://github.com/yourrepo/survivorgraph)
+[survivorgraph on GitHub](https://github.com/betaacid/survivorgraph)
