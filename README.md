@@ -2,6 +2,8 @@
 
 This repo compares three retrieval styles against the same domain: traditional RAG, graph RAG, and agentic graph RAG. The domain is Survivor because it gives you both kinds of data you want for a demo like this. There is a lot of clean structure across 49 seasons, and there is also plenty of narrative text that does not fit neatly into a graph.
 
+Associated blog post: [The tribe has spoken: RAG alone can't answer the hard questions](https://betaacid.co/blog/the-tribe-has-spoken-rag-alone-cant-answer-the-hard-questions)
+
 The main setup path uses two data sources on purpose:
 
 - [`survivoR`](https://github.com/doehm/survivoR) for the structured graph in Neo4j
